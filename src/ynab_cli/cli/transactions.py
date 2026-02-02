@@ -1,0 +1,634 @@
+"""Transaction commands for the YNAB CLI."""
+
+import asyncio
+import json
+from typing import Optional
+
+import httpx
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from ..api.client import YNABClient
+from ..config import settings
+from ..error_handling import (
+    YNABAPIError,
+    YNABAuthenticationError,
+    YNABNetworkError,
+    format_api_error,
+    get_error_details,
+)
+from ..utils import dollars_to_milliunits, milliunits_to_dollars
+
+transactions_app = typer.Typer(
+    name="transactions",
+    help="Manage transactions",
+    no_args_is_help=True,
+)
+
+console = Console()
+
+
+def handle_cli_error(error: Exception) -> None:
+    """
+    Handle CLI errors with specific error messages.
+
+    Args:
+        error: The exception to handle
+    """
+    if isinstance(error, YNABAuthenticationError):
+        console.print(f"[red]Authentication Error:[/red] {error.message}")
+        console.print("Run 'ynab login' to configure your API token")
+    elif isinstance(error, YNABNetworkError):
+        console.print(f"[red]Network Error:[/red] {error.message}")
+    elif isinstance(error, YNABAPIError):
+        console.print(f"[red]API Error:[/red] {error.message}")
+        if error.status_code:
+            console.print(f"Status code: {error.status_code}")
+    elif isinstance(error, (httpx.HTTPStatusError, httpx.RequestError, ValueError)):
+        # Convert to specific YNAB error
+        ynab_error = format_api_error(error)
+        console.print(f"[red]Error:[/red] {ynab_error}")
+    else:
+        console.print(f"[red]Unexpected Error:[/red] {str(error)}")
+
+    # Show detailed debug info if debug mode is enabled
+    details = get_error_details(error)
+    if details != str(error):  # Only print if we have additional debug info
+        console.print("\n[yellow]Debug Details:[/yellow]")
+        console.print(details)
+
+
+@transactions_app.command("list")
+def list_transactions(
+    budget: Optional[str] = typer.Option(
+        None,
+        "--budget",
+        help="Budget ID (overrides default)",
+    ),
+    since_date: Optional[str] = typer.Option(
+        None,
+        "--since-date",
+        help="Only transactions on or after this date (YYYY-MM-DD)",
+    ),
+    transaction_type: Optional[str] = typer.Option(
+        None,
+        "--type",
+        help="Filter by type",
+    ),
+    limit: Optional[int] = typer.Option(
+        None,
+        "--limit",
+        help="Maximum number of transactions to show",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output as JSON",
+    ),
+):
+    """
+    List transactions for a budget.
+
+    Shows transaction date, payee, category, amount, and cleared status.
+    Amounts are displayed in dollars (negative = expense, positive = income).
+    """
+    # Check if token is configured
+    if not settings or not settings.api_token:
+        console.print("[red]Error: API token not configured[/red]")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1)
+
+    try:
+        # Run async operation
+        response = asyncio.run(_list_transactions_async(
+            budget_id=budget,
+            since_date=since_date,
+            transaction_type=transaction_type,
+        ))
+
+        # Extract transactions from response
+        transactions = response["data"]["transactions"]
+
+        # Apply limit if specified
+        if limit:
+            transactions = transactions[:limit]
+
+        # Output
+        if json_output:
+            # JSON output
+            output = {"transactions": transactions}
+            console.print(json.dumps(output, indent=2))
+        else:
+            # Table output
+            _print_transactions_table(transactions)
+
+    except Exception as e:
+        handle_cli_error(e)
+        raise typer.Exit(1)
+
+
+async def _list_transactions_async(
+    budget_id: Optional[str],
+    since_date: Optional[str],
+    transaction_type: Optional[str],
+):
+    """Async helper to fetch transactions."""
+    async with YNABClient() as client:
+        return await client.get_transactions(
+            budget_id=budget_id,
+            since_date=since_date,
+            transaction_type=transaction_type,
+        )
+
+
+def _print_transactions_table(transactions: list):
+    """Print transactions in table format."""
+    table = Table(title="Transactions")
+    table.add_column("Date", style="cyan")
+    table.add_column("Payee", style="green")
+    table.add_column("Category", style="blue")
+    table.add_column("Amount", style="yellow", justify="right")
+    table.add_column("Cleared", style="magenta", justify="center")
+
+    for txn in transactions:
+        # Convert milliunits to dollars
+        amount = milliunits_to_dollars(txn["amount"])
+
+        # Format amount as currency
+        amount_str = f"${amount:,.2f}"
+
+        # Get category name (may be None for uncategorized)
+        category = txn.get("category_name") or "[dim]Uncategorized[/dim]"
+
+        # Cleared status
+        cleared = txn.get("cleared", "")
+        if cleared == "cleared":
+            cleared_display = "✓"
+        elif cleared == "uncleared":
+            cleared_display = ""
+        else:
+            cleared_display = cleared
+
+        table.add_row(
+            txn["date"],
+            txn.get("payee_name", ""),
+            category,
+            amount_str,
+            cleared_display,
+        )
+
+    console.print(table)
+
+
+@transactions_app.command("create")
+def create_transaction(
+    account: str = typer.Option(
+        ...,
+        "--account",
+        help="Account ID",
+    ),
+    date: str = typer.Option(
+        ...,
+        "--date",
+        help="Transaction date (YYYY-MM-DD)",
+    ),
+    amount: float = typer.Option(
+        ...,
+        "--amount",
+        help="Amount in dollars (negative for expenses, positive for income)",
+    ),
+    payee: Optional[str] = typer.Option(
+        None,
+        "--payee",
+        help="Payee ID",
+    ),
+    category: Optional[str] = typer.Option(
+        None,
+        "--category",
+        help="Category ID",
+    ),
+    memo: Optional[str] = typer.Option(
+        None,
+        "--memo",
+        help="Transaction memo",
+    ),
+    cleared: bool = typer.Option(
+        False,
+        "--cleared",
+        help="Mark transaction as cleared",
+    ),
+    approved: bool = typer.Option(
+        False,
+        "--approved",
+        help="Mark transaction as approved",
+    ),
+    budget: Optional[str] = typer.Option(
+        None,
+        "--budget",
+        help="Budget ID (overrides default)",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output as JSON",
+    ),
+):
+    """
+    Create a new transaction.
+
+    Amounts should be in dollars (negative for expenses, positive for income).
+    The CLI will automatically convert to milliunits for the API.
+
+    Examples:
+        # Create an expense
+        ynab transactions create --account acct-123 --date 2024-01-15 --amount -12.45
+
+        # Create income with all fields
+        ynab transactions create --account acct-123 --date 2024-01-20 \\
+            --amount 100.00 --payee payee-456 --category cat-789 \\
+            --memo "Freelance work" --cleared --approved
+    """
+    # Check if token is configured
+    if not settings or not settings.api_token:
+        console.print("[red]Error: API token not configured[/red]")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1)
+
+    try:
+        # Convert amount to milliunits
+        amount_milliunits = dollars_to_milliunits(amount)
+
+        # Build transaction object
+        transaction = {
+            "account_id": account,
+            "date": date,
+            "amount": amount_milliunits,
+        }
+
+        # Add optional fields
+        if payee:
+            transaction["payee_id"] = payee
+        if category:
+            transaction["category_id"] = category
+        if memo:
+            transaction["memo"] = memo
+        if cleared:
+            transaction["cleared"] = "cleared"
+        if approved:
+            transaction["approved"] = True
+
+        # Run async operation
+        response = asyncio.run(_create_transaction_async(
+            budget_id=budget,
+            transaction=transaction,
+        ))
+
+        # Extract created transaction
+        created = response["data"]["transaction"]
+
+        # Output
+        if json_output:
+            console.print(json.dumps({"transaction": created}, indent=2))
+        else:
+            console.print(f"[green]✓ Transaction created successfully[/green]")
+            console.print(f"ID: {created['id']}")
+            console.print(f"Date: {created['date']}")
+            console.print(f"Amount: ${milliunits_to_dollars(created['amount']):,.2f}")
+
+    except Exception as e:
+        handle_cli_error(e)
+        raise typer.Exit(1)
+
+
+async def _create_transaction_async(
+    budget_id: Optional[str],
+    transaction: dict,
+):
+    """Async helper to create a transaction."""
+    async with YNABClient() as client:
+        return await client.create_transaction(
+            budget_id=budget_id,
+            transaction=transaction,
+        )
+
+
+@transactions_app.command("update")
+def update_transaction(
+    transaction_id: str = typer.Argument(
+        ...,
+        help="Transaction ID to update",
+    ),
+    account: Optional[str] = typer.Option(
+        None,
+        "--account",
+        help="Account ID",
+    ),
+    date: Optional[str] = typer.Option(
+        None,
+        "--date",
+        help="Transaction date (YYYY-MM-DD)",
+    ),
+    amount: Optional[float] = typer.Option(
+        None,
+        "--amount",
+        help="Amount in dollars",
+    ),
+    payee: Optional[str] = typer.Option(
+        None,
+        "--payee",
+        help="Payee ID",
+    ),
+    category: Optional[str] = typer.Option(
+        None,
+        "--category",
+        help="Category ID",
+    ),
+    memo: Optional[str] = typer.Option(
+        None,
+        "--memo",
+        help="Transaction memo",
+    ),
+    cleared: bool = typer.Option(
+        False,
+        "--cleared",
+        help="Mark transaction as cleared",
+    ),
+    approved: bool = typer.Option(
+        False,
+        "--approved",
+        help="Mark transaction as approved",
+    ),
+    budget: Optional[str] = typer.Option(
+        None,
+        "--budget",
+        help="Budget ID (overrides default)",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output as JSON",
+    ),
+):
+    """
+    Update an existing transaction.
+
+    Provide only the fields you want to update. Fields not specified will remain unchanged.
+
+    Examples:
+        # Update amount
+        ynab transactions update txn-123 --amount -25.00
+
+        # Update multiple fields
+        ynab transactions update txn-123 --amount -30.00 --memo "Updated" --cleared
+    """
+    # Check if token is configured
+    if not settings or not settings.api_token:
+        console.print("[red]Error: API token not configured[/red]")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1)
+
+    try:
+        # Build updates object
+        updates = {}
+
+        if account:
+            updates["account_id"] = account
+        if date:
+            updates["date"] = date
+        if amount is not None:
+            updates["amount"] = dollars_to_milliunits(amount)
+        if payee:
+            updates["payee_id"] = payee
+        if category:
+            updates["category_id"] = category
+        if memo:
+            updates["memo"] = memo
+        if cleared:
+            updates["cleared"] = "cleared"
+        if approved:
+            updates["approved"] = True
+
+        # Run async operation
+        response = asyncio.run(_update_transaction_async(
+            transaction_id=transaction_id,
+            budget_id=budget,
+            updates=updates,
+        ))
+
+        # Extract updated transaction
+        updated = response["data"]["transaction"]
+
+        # Output
+        if json_output:
+            console.print(json.dumps({"transaction": updated}, indent=2))
+        else:
+            console.print(f"[green]✓ Transaction updated successfully[/green]")
+            console.print(f"ID: {updated['id']}")
+
+    except Exception as e:
+        handle_cli_error(e)
+        raise typer.Exit(1)
+
+
+async def _update_transaction_async(
+    transaction_id: str,
+    budget_id: Optional[str],
+    updates: dict,
+):
+    """Async helper to update a transaction."""
+    async with YNABClient() as client:
+        return await client.update_transaction(
+            transaction_id=transaction_id,
+            budget_id=budget_id,
+            **updates,
+        )
+
+
+@transactions_app.command("delete")
+def delete_transaction(
+    transaction_id: str = typer.Argument(
+        ...,
+        help="Transaction ID to delete",
+    ),
+    confirm: bool = typer.Option(
+        False,
+        "--confirm",
+        help="Skip confirmation prompt",
+    ),
+    budget: Optional[str] = typer.Option(
+        None,
+        "--budget",
+        help="Budget ID (overrides default)",
+    ),
+):
+    """
+    Delete a transaction.
+
+    By default, prompts for confirmation. Use --confirm to skip the prompt.
+
+    Examples:
+        # Delete with confirmation prompt
+        ynab transactions delete txn-123
+
+        # Delete without prompt
+        ynab transactions delete txn-123 --confirm
+    """
+    # Check if token is configured
+    if not settings or not settings.api_token:
+        console.print("[red]Error: API token not configured[/red]")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1)
+
+    # Prompt for confirmation if not provided
+    if not confirm:
+        confirmed = typer.confirm(
+            f"Are you sure you want to delete transaction {transaction_id}?"
+        )
+        if not confirmed:
+            console.print("Cancelled")
+            raise typer.Exit(0)
+
+    try:
+        # Run async operation
+        asyncio.run(_delete_transaction_async(
+            transaction_id=transaction_id,
+            budget_id=budget,
+        ))
+
+        console.print(f"[green]✓ Transaction {transaction_id} deleted successfully[/green]")
+
+    except Exception as e:
+        handle_cli_error(e)
+        raise typer.Exit(1)
+
+
+async def _delete_transaction_async(
+    transaction_id: str,
+    budget_id: Optional[str],
+):
+    """Async helper to delete a transaction."""
+    async with YNABClient() as client:
+        return await client.delete_transaction(
+            transaction_id=transaction_id,
+            budget_id=budget_id,
+        )
+
+
+@transactions_app.command("transfer")
+def transfer_between_accounts(
+    from_account: str = typer.Option(
+        ...,
+        "--from-account",
+        help="Source account (name or ID)",
+    ),
+    to_account: str = typer.Option(
+        ...,
+        "--to-account",
+        help="Destination account (name or ID)",
+    ),
+    amount: float = typer.Option(
+        ...,
+        "--amount",
+        help="Transfer amount in dollars (positive number)",
+    ),
+    date: str = typer.Option(
+        ...,
+        "--date",
+        help="Transfer date (YYYY-MM-DD)",
+    ),
+    memo: Optional[str] = typer.Option(
+        None,
+        "--memo",
+        help="Transfer memo",
+    ),
+    budget: Optional[str] = typer.Option(
+        None,
+        "--budget",
+        help="Budget ID (overrides default)",
+    ),
+):
+    """
+    Create a transfer between two accounts.
+
+    Transfers are special transactions that move money between accounts.
+    YNAB automatically creates matching transactions in both accounts.
+
+    Examples:
+        # Transfer from Checking to Savings
+        ynab transactions transfer --from-account Checking --to-account Savings \\
+            --amount 100.00 --date 2024-01-15
+
+        # Transfer with memo
+        ynab transactions transfer --from-account "Checking" --to-account "Savings" \\
+            --amount 500.00 --date 2024-01-20 --memo "Monthly savings"
+    """
+    # Check if token is configured
+    if not settings or not settings.api_token:
+        console.print("[red]Error: API token not configured[/red]")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1)
+
+    try:
+        # Fetch accounts to get IDs and transfer payee IDs
+        accounts_response = asyncio.run(_get_accounts_async(budget_id=budget))
+        accounts = accounts_response["data"]["accounts"]
+
+        # Find source and destination accounts
+        source_account = None
+        dest_account = None
+
+        for account in accounts:
+            # Match by name or ID
+            if account["name"] == from_account or account["id"] == from_account:
+                source_account = account
+            if account["name"] == to_account or account["id"] == to_account:
+                dest_account = account
+
+        # Validate accounts were found
+        if not source_account:
+            console.print(f"[red]Error: Source account '{from_account}' not found[/red]")
+            raise typer.Exit(1)
+
+        if not dest_account:
+            console.print(f"[red]Error: Destination account '{to_account}' not found[/red]")
+            raise typer.Exit(1)
+
+        # Build transfer transaction
+        # Amount is negative (leaving source account)
+        # Use destination account's transfer_payee_id
+        transaction = {
+            "account_id": source_account["id"],
+            "date": date,
+            "amount": -abs(dollars_to_milliunits(amount)),  # Always negative
+            "payee_id": dest_account["transfer_payee_id"],
+        }
+
+        if memo:
+            transaction["memo"] = memo
+
+        # Create transaction (YNAB creates matching transaction automatically)
+        response = asyncio.run(_create_transaction_async(
+            budget_id=budget,
+            transaction=transaction,
+        ))
+
+        created = response["data"]["transaction"]
+
+        console.print(f"[green]✓ Transfer created successfully[/green]")
+        console.print(f"From: {source_account['name']}")
+        console.print(f"To: {dest_account['name']}")
+        console.print(f"Amount: ${abs(amount):,.2f}")
+        console.print(f"Transaction ID: {created['id']}")
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        handle_cli_error(e)
+        raise typer.Exit(1)
+
+
+async def _get_accounts_async(budget_id: Optional[str]):
+    """Async helper to fetch accounts."""
+    async with YNABClient() as client:
+        return await client.get_accounts(budget_id=budget_id)
