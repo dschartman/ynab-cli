@@ -16,9 +16,8 @@ A comprehensive Python CLI tool for the YNAB (You Need A Budget) API, designed s
 ## Critical Context
 
 ### API Understanding
-- **Full API analysis**: See `YNAB_API_ANALYSIS.md`
-- **Goals/Targets**: See `LINKED_TRANSACTIONS_AND_TARGETS.md` and `TARGET_BUDGET_CALCULATION.md`
-- **OpenAPI spec**: Available in `openapi_spec.yaml` (3,430 lines)
+- **Full API analysis**: See `docs/YNAB_API_ANALYSIS.md`
+- **OpenAPI spec**: Available in `docs/openapi_spec.yaml` (3,430 lines)
 
 ### Design Decisions
 - **Global tool**: Installed via `uv tool install ynab-cli` (works anywhere)
@@ -27,13 +26,6 @@ A comprehensive Python CLI tool for the YNAB (You Need A Budget) API, designed s
 - **No database**: Direct API calls (simple, fast, stateless)
 - **Rate limiting**: Built-in (200 req/hour YNAB limit)
 - **CLI framework**: Typer (modern, type-hint based, built on Click)
-
-### Code to Leverage
-The `ynab-budget` project at `../ynab-budget/` has production-ready code:
-- API client with rate limiting (`api/client.py`)
-- Pydantic Settings config management (`config.py`)
-- CLI structure pattern (`cli/main.py`) - but we're using Typer instead of Click
-- See `LEARNINGS_FROM_YNAB_BUDGET.md` for details
 
 ## Key Technical Concepts
 
@@ -64,6 +56,35 @@ All YNAB monetary amounts are integers in "milliunits":
 - Transfers create TWO linked transactions
 - Use account's `transfer_payee_id` to create transfers
 - Both have `transfer_transaction_id` linking them
+
+## Code Quality Hooks
+
+This project uses [Claude Code Hooks](https://code.claude.com/docs/en/hooks) to automatically enforce code quality standards.
+
+**Configured Hooks:**
+
+1. **PostToolUse Hook** - Runs after editing Python files in `src/ynab_cli/`:
+   - ✓ Ruff linting (`ruff check`)
+   - ✓ Ruff formatting (`ruff format --check`)
+   - ✓ Mypy type checking
+   - Blocks edits that don't pass checks
+
+2. **Stop Hook** - Runs before Claude finishes responding:
+   - ✓ Full codebase ruff check and format verification
+   - ✓ Complete mypy type checking on `src/ynab_cli/`
+   - ✓ Test suite execution (`pytest tests/test_cli/`)
+   - Prevents stopping until all checks pass
+
+**Hook Files:**
+- `.claude/settings.json` - Hook configuration (committed to git)
+- `.claude/hooks/check-python-quality.sh` - PostToolUse script
+- `.claude/hooks/verify-quality.sh` - Stop script
+- `.claude/hooks/README.md` - Hook documentation
+
+**Managing Hooks:**
+- View/edit: `/hooks` command in Claude Code
+- Disable temporarily: Set `"disableAllHooks": true` in `.claude/settings.json`
+- Debug: Run `claude --debug` or press `Ctrl+O` for verbose mode
 
 ## Using Trace for Work Tracking
 
@@ -143,11 +164,8 @@ ynab-cli/
 │
 ├── docs/
 │   ├── YNAB_API_ANALYSIS.md
-│   ├── LINKED_TRANSACTIONS_AND_TARGETS.md
-│   ├── TARGET_BUDGET_CALCULATION.md
-│   └── LEARNINGS_FROM_YNAB_BUDGET.md
+│   └── openapi_spec.yaml     # Full YNAB API spec
 │
-├── openapi_spec.yaml     # Full YNAB API spec
 ├── pyproject.toml        # Project config
 ├── CLAUDE.md            # This file
 └── README.md            # User documentation
@@ -157,14 +175,14 @@ ynab-cli/
 └── config.toml          # Token stored here
 ```
 
-## CLI Command Structure (Planned)
+## CLI Command Structure
 
 ```bash
 # Authentication
 ynab login               # Configure API credentials
 
 # Budgets
-ynab budgets list        # List all budgets
+ynab budgets list        # List all budgets (JSON output by default)
 ynab budgets get [id]    # Get budget details
 ynab budgets settings    # Budget settings
 
@@ -185,11 +203,10 @@ ynab transactions update <id>
 ynab transactions delete <id>
 
 # Months
-ynab months list         # Budget months
 ynab months get <month>  # Month details
 
-# All commands support:
---json                   # JSON output
+# Common options:
+--table                  # Human-readable table output (default is JSON)
 --budget <id>            # Override default budget
 ```
 
@@ -199,8 +216,9 @@ ynab months get <month>  # Month details
 - Always use trace for work tracking (not TodoWrite)
 - Reference API documentation before implementing endpoints
 - Test with actual YNAB API (user has account)
-- Follow patterns from ynab-budget project
+- Follow existing patterns in the codebase (see `src/ynab_cli/`)
 - Prioritize JSON output for programmatic use
+- **Code quality hooks enforce standards automatically** - they'll block bad code
 
 ### Code Standards
 - Python 3.12+
@@ -209,6 +227,37 @@ ynab months get <month>  # Month details
 - Pydantic for config/validation
 - Type hints everywhere (required for Typer)
 - Clear error messages
+
+### Code Quality Checks
+
+**Automated via Hooks** - Code quality is enforced automatically:
+
+- **PostToolUse Hook**: Runs after editing Python files in `src/ynab_cli/`
+  - Ruff linting and formatting checks
+  - Mypy type checking
+  - Blocks the edit if any check fails
+
+- **Stop Hook**: Runs before Claude finishes responding
+  - Full codebase ruff check and format verification
+  - Complete mypy type checking
+  - Test suite execution
+  - Prevents stopping until all checks pass
+
+**Manual checks** (if needed):
+```bash
+# Run ruff for linting and formatting
+uv run ruff check .
+uv run ruff format .
+
+# Run mypy for type checking
+uv run mypy src/ynab_cli
+
+# Run tests
+uv run pytest tests/test_cli/
+```
+
+**Hook configuration**: See `.claude/settings.json` and `.claude/hooks/`
+**Manage hooks**: Use `/hooks` command or edit settings files directly
 
 ### Testing - Test-Driven Development (TDD) Required
 
@@ -265,13 +314,13 @@ uv tool install .
 
 # Use the tool
 ynab login
-ynab budgets list --json
+ynab budgets list           # JSON output (default)
+ynab budgets list --table   # Table output (human-readable)
 ```
 
 ### Key Files
-- `YNAB_API_ANALYSIS.md` - Complete API reference
-- `LEARNINGS_FROM_YNAB_BUDGET.md` - Code to copy
-- `openapi_spec.yaml` - Official API spec
+- `docs/YNAB_API_ANALYSIS.md` - Complete API reference
+- `docs/openapi_spec.yaml` - Official API spec
 - `CLAUDE.md` - This file (project context)
 
 ### Important Links

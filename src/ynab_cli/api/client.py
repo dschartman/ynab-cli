@@ -1,51 +1,13 @@
 """YNAB API client - direct HTTP calls without MCP layer."""
 
-import asyncio
 import time
-from functools import wraps
-from typing import Any, Dict, Optional
+from typing import Any, cast
 
 import httpx
+from aiolimiter import AsyncLimiter
 
-from ..config import settings
-from ..logging_config import log_api_request, log_api_response
-
-
-def rate_limit(min_interval_seconds: float = 0.5):
-    """
-    Rate limiting decorator for instance methods.
-
-    Tracks rate limiting per-instance using the _rate_limit_state instance attribute.
-    Each client instance maintains its own rate limiting state.
-
-    Args:
-        min_interval_seconds: Minimum seconds between calls
-    """
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(self, *args, **kwargs):
-            # Get or create rate limit state for this instance
-            if not hasattr(self, '_rate_limit_state'):
-                self._rate_limit_state = {}
-
-            func_name = func.__name__
-            if func_name not in self._rate_limit_state:
-                self._rate_limit_state[func_name] = {"time": 0}
-
-            last_call_time = self._rate_limit_state[func_name]
-            current_time = time.time()
-            time_since_last_call = current_time - last_call_time["time"]
-
-            if time_since_last_call < min_interval_seconds:
-                sleep_time = min_interval_seconds - time_since_last_call
-                await asyncio.sleep(sleep_time)
-
-            result = await func(self, *args, **kwargs)
-            last_call_time["time"] = time.time()
-            return result
-
-        return wrapper
-    return decorator
+from ynab_cli.config import settings
+from ynab_cli.logging_config import log_api_request, log_api_response
 
 
 class YNABClient:
@@ -58,10 +20,10 @@ class YNABClient:
 
     def __init__(
         self,
-        api_token: Optional[str] = None,
-        budget_id: Optional[str] = None,
-        base_url: Optional[str] = None,
-        require_budget: bool = True
+        api_token: str | None = None,
+        budget_id: str | None = None,
+        base_url: str | None = None,
+        require_budget: bool = True,
     ):
         """
         Initialize YNAB API client.
@@ -85,34 +47,36 @@ class YNABClient:
             base_url=self.base_url,
             headers={
                 "Authorization": f"Bearer {self.api_token}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             },
-            timeout=30.0
+            timeout=30.0,
         )
 
-    async def __aenter__(self):
+        # Rate limiter: 200 requests per hour (YNAB API limit)
+        self.limiter = AsyncLimiter(max_rate=200, time_period=3600)
+
+    async def __aenter__(self) -> "YNABClient":
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
         await self.close()
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client."""
         await self.client.aclose()
 
     # Core API methods
 
-    @rate_limit(0.5)
-    async def get_user(self) -> Dict[str, Any]:
+    async def get_user(self) -> dict[str, Any]:
         """Get authenticated user information."""
-        response = await self.client.get("/user")
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.get("/user")
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(0.5)
-    async def get_budgets(self, include_accounts: bool = False) -> Dict[str, Any]:
+    async def get_budgets(self, include_accounts: bool = False) -> dict[str, Any]:
         """
         Get list of budgets.
 
@@ -129,19 +93,19 @@ class YNABClient:
         # Log request
         log_api_request("GET", f"{self.base_url}/budgets", params if params else None)
 
-        # Make request
-        start_time = time.time()
-        response = await self.client.get("/budgets", params=params)
-        duration_ms = (time.time() - start_time) * 1000
+        # Make request with rate limiting
+        async with self.limiter:
+            start_time = time.time()
+            response = await self.client.get("/budgets", params=params)
+            duration_ms = (time.time() - start_time) * 1000
 
-        # Log response
-        log_api_response(response.status_code, f"{self.base_url}/budgets", duration_ms)
+            # Log response
+            log_api_response(response.status_code, f"{self.base_url}/budgets", duration_ms)
 
-        response.raise_for_status()
-        return response.json()
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(0.5)
-    async def get_budget(self, budget_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_budget(self, budget_id: str | None = None) -> dict[str, Any]:
         """
         Get specific budget details.
 
@@ -152,12 +116,12 @@ class YNABClient:
             Budget details response
         """
         bid = budget_id or self.budget_id
-        response = await self.client.get(f"/budgets/{bid}")
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.get(f"/budgets/{bid}")
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(0.5)
-    async def get_accounts(self, budget_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_accounts(self, budget_id: str | None = None) -> dict[str, Any]:
         """
         Get accounts for a budget.
 
@@ -168,12 +132,12 @@ class YNABClient:
             Accounts response
         """
         bid = budget_id or self.budget_id
-        response = await self.client.get(f"/budgets/{bid}/accounts")
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.get(f"/budgets/{bid}/accounts")
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(0.5)
-    async def get_categories(self, budget_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_categories(self, budget_id: str | None = None) -> dict[str, Any]:
         """
         Get categories for a budget.
 
@@ -184,12 +148,12 @@ class YNABClient:
             Categories response
         """
         bid = budget_id or self.budget_id
-        response = await self.client.get(f"/budgets/{bid}/categories")
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.get(f"/budgets/{bid}/categories")
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(0.5)
-    async def get_month(self, month: str, budget_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_month(self, month: str, budget_id: str | None = None) -> dict[str, Any]:
         """
         Get budget data for a specific month, including category balances.
 
@@ -201,12 +165,12 @@ class YNABClient:
             Month response with category data
         """
         bid = budget_id or self.budget_id
-        response = await self.client.get(f"/budgets/{bid}/months/{month}")
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.get(f"/budgets/{bid}/months/{month}")
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(0.5)
-    async def get_payees(self, budget_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_payees(self, budget_id: str | None = None) -> dict[str, Any]:
         """
         Get payees for a budget.
 
@@ -217,17 +181,17 @@ class YNABClient:
             Payees response
         """
         bid = budget_id or self.budget_id
-        response = await self.client.get(f"/budgets/{bid}/payees")
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.get(f"/budgets/{bid}/payees")
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(0.5)
     async def get_transactions(
         self,
-        budget_id: Optional[str] = None,
-        since_date: Optional[str] = None,
-        transaction_type: Optional[str] = None
-    ) -> Dict[str, Any]:
+        budget_id: str | None = None,
+        since_date: str | None = None,
+        transaction_type: str | None = None,
+    ) -> dict[str, Any]:
         """
         Get transactions for a budget.
 
@@ -246,17 +210,14 @@ class YNABClient:
         if transaction_type:
             params["type"] = transaction_type
 
-        response = await self.client.get(f"/budgets/{bid}/transactions", params=params)
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.get(f"/budgets/{bid}/transactions", params=params)
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(1.0)
     async def update_transaction(
-        self,
-        transaction_id: str,
-        budget_id: Optional[str] = None,
-        **updates
-    ) -> Dict[str, Any]:
+        self, transaction_id: str, budget_id: str | None = None, **updates: Any
+    ) -> dict[str, Any]:
         """
         Update a transaction.
 
@@ -273,19 +234,16 @@ class YNABClient:
         # Build update payload
         payload = {"transaction": updates}
 
-        response = await self.client.put(
-            f"/budgets/{bid}/transactions/{transaction_id}",
-            json=payload
-        )
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.put(
+                f"/budgets/{bid}/transactions/{transaction_id}", json=payload
+            )
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(1.0)
     async def delete_transaction(
-        self,
-        transaction_id: str,
-        budget_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, transaction_id: str, budget_id: str | None = None
+    ) -> dict[str, Any]:
         """
         Delete a transaction.
 
@@ -298,19 +256,14 @@ class YNABClient:
         """
         bid = budget_id or self.budget_id
 
-        response = await self.client.delete(
-            f"/budgets/{bid}/transactions/{transaction_id}"
-        )
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.delete(f"/budgets/{bid}/transactions/{transaction_id}")
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(1.0)
     async def update_category(
-        self,
-        category_id: str,
-        budget_id: Optional[str] = None,
-        **updates
-    ) -> Dict[str, Any]:
+        self, category_id: str, budget_id: str | None = None, **updates: Any
+    ) -> dict[str, Any]:
         """
         Update a category.
 
@@ -327,21 +280,16 @@ class YNABClient:
         # Build update payload
         payload = {"category": updates}
 
-        response = await self.client.patch(
-            f"/budgets/{bid}/categories/{category_id}",
-            json=payload
-        )
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.patch(
+                f"/budgets/{bid}/categories/{category_id}", json=payload
+            )
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(1.0)
     async def update_category_month(
-        self,
-        category_id: str,
-        month: str,
-        budget_id: Optional[str] = None,
-        **updates
-    ) -> Dict[str, Any]:
+        self, category_id: str, month: str, budget_id: str | None = None, **updates: Any
+    ) -> dict[str, Any]:
         """
         Update category budgeted amount for a specific month.
 
@@ -359,19 +307,16 @@ class YNABClient:
         # Build update payload
         payload = {"category": updates}
 
-        response = await self.client.patch(
-            f"/budgets/{bid}/months/{month}/categories/{category_id}",
-            json=payload
-        )
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.patch(
+                f"/budgets/{bid}/months/{month}/categories/{category_id}", json=payload
+            )
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
-    @rate_limit(1.0)
     async def create_transaction(
-        self,
-        transaction: Dict[str, Any],
-        budget_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, transaction: dict[str, Any], budget_id: str | None = None
+    ) -> dict[str, Any]:
         """
         Create a new transaction.
 
@@ -396,12 +341,10 @@ class YNABClient:
         # Wrap transaction in required format
         payload = {"transaction": transaction}
 
-        response = await self.client.post(
-            f"/budgets/{bid}/transactions",
-            json=payload
-        )
-        response.raise_for_status()
-        return response.json()
+        async with self.limiter:
+            response = await self.client.post(f"/budgets/{bid}/transactions", json=payload)
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
 
 
 # Convenience function for quick one-off operations

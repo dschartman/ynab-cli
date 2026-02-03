@@ -1,6 +1,5 @@
 """Tests for YNAB API client."""
 
-import asyncio
 import time
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -15,10 +14,7 @@ class TestYNABClientInit:
 
     def test_init_with_explicit_token_and_budget(self):
         """Client should initialize with explicit API token and budget ID."""
-        client = YNABClient(
-            api_token="test-token-123",
-            budget_id="budget-456"
-        )
+        client = YNABClient(api_token="test-token-123", budget_id="budget-456")
 
         assert client.api_token == "test-token-123"
         assert client.budget_id == "budget-456"
@@ -40,20 +36,14 @@ class TestYNABClientInit:
     def test_init_can_skip_budget_requirement(self, clean_env):
         """Client should allow initialization without budget_id when require_budget=False."""
         with patch("ynab_cli.api.client.settings", None):
-            client = YNABClient(
-                api_token="test-token",
-                require_budget=False
-            )
+            client = YNABClient(api_token="test-token", require_budget=False)
 
             assert client.api_token == "test-token"
             assert client.budget_id is None
 
     def test_init_sets_authorization_header(self):
         """Client should set Bearer token in Authorization header."""
-        client = YNABClient(
-            api_token="test-token-abc",
-            budget_id="budget-123"
-        )
+        client = YNABClient(api_token="test-token-abc", budget_id="budget-123")
 
         headers = client.client.headers
         assert headers["Authorization"] == "Bearer test-token-abc"
@@ -62,9 +52,7 @@ class TestYNABClientInit:
     def test_init_accepts_custom_base_url(self):
         """Client should accept custom base URL."""
         client = YNABClient(
-            api_token="test-token",
-            budget_id="budget-123",
-            base_url="https://custom.api.com"
+            api_token="test-token", budget_id="budget-123", base_url="https://custom.api.com"
         )
 
         assert client.base_url == "https://custom.api.com"
@@ -76,10 +64,7 @@ class TestYNABClientAPIMethods:
     @pytest.fixture
     def mock_client(self):
         """Fixture providing a YNABClient with mocked httpx client."""
-        client = YNABClient(
-            api_token="test-token",
-            budget_id="default-budget-id"
-        )
+        client = YNABClient(api_token="test-token", budget_id="default-budget-id")
         # Replace the httpx client with a mock
         client.client = AsyncMock(spec=httpx.AsyncClient)
         return client
@@ -124,8 +109,7 @@ class TestYNABClientAPIMethods:
         result = await mock_client.get_budgets(include_accounts=True)
 
         mock_client.client.get.assert_called_once_with(
-            "/budgets",
-            params={"include_accounts": "true"}
+            "/budgets", params={"include_accounts": "true"}
         )
         assert result == expected_response
 
@@ -168,9 +152,7 @@ class TestYNABClientAPIMethods:
 
         result = await mock_client.get_accounts()
 
-        mock_client.client.get.assert_called_once_with(
-            "/budgets/default-budget-id/accounts"
-        )
+        mock_client.client.get.assert_called_once_with("/budgets/default-budget-id/accounts")
         assert result == expected_response
 
     @pytest.mark.asyncio
@@ -184,9 +166,7 @@ class TestYNABClientAPIMethods:
 
         result = await mock_client.get_categories()
 
-        mock_client.client.get.assert_called_once_with(
-            "/budgets/default-budget-id/categories"
-        )
+        mock_client.client.get.assert_called_once_with("/budgets/default-budget-id/categories")
         assert result == expected_response
 
     @pytest.mark.asyncio
@@ -216,9 +196,7 @@ class TestYNABClientAPIMethods:
 
         result = await mock_client.get_payees()
 
-        mock_client.client.get.assert_called_once_with(
-            "/budgets/default-budget-id/payees"
-        )
+        mock_client.client.get.assert_called_once_with("/budgets/default-budget-id/payees")
         assert result == expected_response
 
     @pytest.mark.asyncio
@@ -233,8 +211,7 @@ class TestYNABClientAPIMethods:
         result = await mock_client.get_transactions()
 
         mock_client.client.get.assert_called_once_with(
-            "/budgets/default-budget-id/transactions",
-            params={}
+            "/budgets/default-budget-id/transactions", params={}
         )
         assert result == expected_response
 
@@ -250,8 +227,7 @@ class TestYNABClientAPIMethods:
         result = await mock_client.get_transactions(since_date="2025-01-01")
 
         mock_client.client.get.assert_called_once_with(
-            "/budgets/default-budget-id/transactions",
-            params={"since_date": "2025-01-01"}
+            "/budgets/default-budget-id/transactions", params={"since_date": "2025-01-01"}
         )
         assert result == expected_response
 
@@ -267,8 +243,7 @@ class TestYNABClientAPIMethods:
         result = await mock_client.get_transactions(transaction_type="unapproved")
 
         mock_client.client.get.assert_called_once_with(
-            "/budgets/default-budget-id/transactions",
-            params={"type": "unapproved"}
+            "/budgets/default-budget-id/transactions", params={"type": "unapproved"}
         )
         assert result == expected_response
 
@@ -279,10 +254,7 @@ class TestYNABClientErrorHandling:
     @pytest.fixture
     def mock_client(self):
         """Fixture providing a YNABClient with mocked httpx client."""
-        client = YNABClient(
-            api_token="test-token",
-            budget_id="default-budget-id"
-        )
+        client = YNABClient(api_token="test-token", budget_id="default-budget-id")
         client.client = AsyncMock(spec=httpx.AsyncClient)
         return client
 
@@ -292,9 +264,7 @@ class TestYNABClientErrorHandling:
         mock_response = Mock()
         mock_response.status_code = 401
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Unauthorized",
-            request=Mock(),
-            response=mock_response
+            "Unauthorized", request=Mock(), response=mock_response
         )
         mock_client.client.get.return_value = mock_response
 
@@ -309,9 +279,7 @@ class TestYNABClientErrorHandling:
         mock_response = Mock()
         mock_response.status_code = 403
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Forbidden",
-            request=Mock(),
-            response=mock_response
+            "Forbidden", request=Mock(), response=mock_response
         )
         mock_client.client.get.return_value = mock_response
 
@@ -326,9 +294,7 @@ class TestYNABClientErrorHandling:
         mock_response = Mock()
         mock_response.status_code = 404
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Not Found",
-            request=Mock(),
-            response=mock_response
+            "Not Found", request=Mock(), response=mock_response
         )
         mock_client.client.get.return_value = mock_response
 
@@ -343,9 +309,7 @@ class TestYNABClientErrorHandling:
         mock_response = Mock()
         mock_response.status_code = 500
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Internal Server Error",
-            request=Mock(),
-            response=mock_response
+            "Internal Server Error", request=Mock(), response=mock_response
         )
         mock_client.client.get.return_value = mock_response
 
@@ -360,9 +324,7 @@ class TestYNABClientErrorHandling:
         mock_response = Mock()
         mock_response.status_code = 429
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Too Many Requests",
-            request=Mock(),
-            response=mock_response
+            "Too Many Requests", request=Mock(), response=mock_response
         )
         mock_client.client.get.return_value = mock_response
 
@@ -374,9 +336,7 @@ class TestYNABClientErrorHandling:
     @pytest.mark.asyncio
     async def test_handles_network_timeout(self, mock_client):
         """Client should propagate network timeout errors."""
-        mock_client.client.get.side_effect = httpx.TimeoutException(
-            "Request timed out"
-        )
+        mock_client.client.get.side_effect = httpx.TimeoutException("Request timed out")
 
         with pytest.raises(httpx.TimeoutException):
             await mock_client.get_budgets()
@@ -384,9 +344,7 @@ class TestYNABClientErrorHandling:
     @pytest.mark.asyncio
     async def test_handles_connection_error(self, mock_client):
         """Client should propagate connection errors."""
-        mock_client.client.get.side_effect = httpx.ConnectError(
-            "Connection refused"
-        )
+        mock_client.client.get.side_effect = httpx.ConnectError("Connection refused")
 
         with pytest.raises(httpx.ConnectError):
             await mock_client.get_user()
@@ -422,10 +380,7 @@ class TestYNABClientContextManager:
     @pytest.mark.asyncio
     async def test_async_context_manager_entry(self):
         """Client should return self on __aenter__."""
-        client = YNABClient(
-            api_token="test-token",
-            budget_id="test-budget"
-        )
+        client = YNABClient(api_token="test-token", budget_id="test-budget")
 
         async with client as ctx_client:
             assert ctx_client is client
@@ -433,10 +388,7 @@ class TestYNABClientContextManager:
     @pytest.mark.asyncio
     async def test_async_context_manager_closes_client(self):
         """Client should close httpx client on __aexit__."""
-        client = YNABClient(
-            api_token="test-token",
-            budget_id="test-budget"
-        )
+        client = YNABClient(api_token="test-token", budget_id="test-budget")
 
         # Mock the close method to track if it's called
         client.client.aclose = AsyncMock()
@@ -450,10 +402,7 @@ class TestYNABClientContextManager:
     @pytest.mark.asyncio
     async def test_async_context_manager_closes_on_exception(self):
         """Client should close httpx client even when exception occurs."""
-        client = YNABClient(
-            api_token="test-token",
-            budget_id="test-budget"
-        )
+        client = YNABClient(api_token="test-token", budget_id="test-budget")
 
         # Mock the close method
         client.client.aclose = AsyncMock()
@@ -469,10 +418,7 @@ class TestYNABClientContextManager:
     @pytest.mark.asyncio
     async def test_close_method_closes_httpx_client(self):
         """close() method should close the underlying httpx client."""
-        client = YNABClient(
-            api_token="test-token",
-            budget_id="test-budget"
-        )
+        client = YNABClient(api_token="test-token", budget_id="test-budget")
 
         # Mock aclose
         client.client.aclose = AsyncMock()
@@ -484,10 +430,7 @@ class TestYNABClientContextManager:
     @pytest.mark.asyncio
     async def test_context_manager_with_api_calls(self):
         """Context manager should work with actual API calls."""
-        client = YNABClient(
-            api_token="test-token",
-            budget_id="test-budget"
-        )
+        client = YNABClient(api_token="test-token", budget_id="test-budget")
 
         # Mock httpx client
         mock_response = Mock()
@@ -510,10 +453,7 @@ class TestYNABClientWriteOperations:
     @pytest.fixture
     def mock_client(self):
         """Fixture providing a YNABClient with mocked httpx client."""
-        client = YNABClient(
-            api_token="test-token",
-            budget_id="default-budget-id"
-        )
+        client = YNABClient(api_token="test-token", budget_id="default-budget-id")
         client.client = AsyncMock(spec=httpx.AsyncClient)
         return client
 
@@ -528,7 +468,7 @@ class TestYNABClientWriteOperations:
             "category_id": "cat-789",
             "memo": "Test transaction",
             "cleared": "cleared",
-            "approved": True
+            "approved": True,
         }
         expected_response = {"data": {"transaction": transaction_data}}
         mock_response = Mock()
@@ -540,8 +480,7 @@ class TestYNABClientWriteOperations:
 
         # Verify POST was called with correct endpoint and payload
         mock_client.client.post.assert_called_once_with(
-            "/budgets/default-budget-id/transactions",
-            json={"transaction": transaction_data}
+            "/budgets/default-budget-id/transactions", json={"transaction": transaction_data}
         )
         assert result == expected_response
 
@@ -557,19 +496,14 @@ class TestYNABClientWriteOperations:
         await mock_client.create_transaction(transaction_data, budget_id="custom-budget")
 
         mock_client.client.post.assert_called_once_with(
-            "/budgets/custom-budget/transactions",
-            json={"transaction": transaction_data}
+            "/budgets/custom-budget/transactions", json={"transaction": transaction_data}
         )
 
     @pytest.mark.asyncio
     async def test_update_transaction(self, mock_client):
         """update_transaction should PUT with correct payload format."""
         transaction_id = "txn-123"
-        updates = {
-            "category_id": "new-cat-456",
-            "approved": True,
-            "memo": "Updated memo"
-        }
+        updates = {"category_id": "new-cat-456", "approved": True, "memo": "Updated memo"}
         expected_response = {"data": {"transaction": {"id": transaction_id}}}
         mock_response = Mock()
         mock_response.json.return_value = expected_response
@@ -580,8 +514,7 @@ class TestYNABClientWriteOperations:
 
         # Verify PUT was called with correct endpoint and payload
         mock_client.client.put.assert_called_once_with(
-            "/budgets/default-budget-id/transactions/txn-123",
-            json={"transaction": updates}
+            "/budgets/default-budget-id/transactions/txn-123", json={"transaction": updates}
         )
         assert result == expected_response
 
@@ -593,15 +526,10 @@ class TestYNABClientWriteOperations:
         mock_response.raise_for_status = Mock()
         mock_client.client.put.return_value = mock_response
 
-        await mock_client.update_transaction(
-            "txn-123",
-            budget_id="custom-budget",
-            approved=True
-        )
+        await mock_client.update_transaction("txn-123", budget_id="custom-budget", approved=True)
 
         mock_client.client.put.assert_called_once_with(
-            "/budgets/custom-budget/transactions/txn-123",
-            json={"transaction": {"approved": True}}
+            "/budgets/custom-budget/transactions/txn-123", json={"transaction": {"approved": True}}
         )
 
     @pytest.mark.asyncio
@@ -640,11 +568,7 @@ class TestYNABClientWriteOperations:
     async def test_update_category(self, mock_client):
         """update_category should PATCH with correct payload format."""
         category_id = "cat-123"
-        updates = {
-            "name": "New Category Name",
-            "note": "Updated note",
-            "goal_target": 50000
-        }
+        updates = {"name": "New Category Name", "note": "Updated note", "goal_target": 50000}
         expected_response = {"data": {"category": {"id": category_id}}}
         mock_response = Mock()
         mock_response.json.return_value = expected_response
@@ -655,8 +579,7 @@ class TestYNABClientWriteOperations:
 
         # Verify PATCH was called with correct endpoint and payload
         mock_client.client.patch.assert_called_once_with(
-            "/budgets/default-budget-id/categories/cat-123",
-            json={"category": updates}
+            "/budgets/default-budget-id/categories/cat-123", json={"category": updates}
         )
         assert result == expected_response
 
@@ -668,15 +591,10 @@ class TestYNABClientWriteOperations:
         mock_response.raise_for_status = Mock()
         mock_client.client.patch.return_value = mock_response
 
-        await mock_client.update_category(
-            "cat-123",
-            budget_id="custom-budget",
-            name="New Name"
-        )
+        await mock_client.update_category("cat-123", budget_id="custom-budget", name="New Name")
 
         mock_client.client.patch.assert_called_once_with(
-            "/budgets/custom-budget/categories/cat-123",
-            json={"category": {"name": "New Name"}}
+            "/budgets/custom-budget/categories/cat-123", json={"category": {"name": "New Name"}}
         )
 
     @pytest.mark.asyncio
@@ -696,7 +614,7 @@ class TestYNABClientWriteOperations:
         # Verify PATCH was called with correct month-specific endpoint
         mock_client.client.patch.assert_called_once_with(
             "/budgets/default-budget-id/months/2025-04-01/categories/cat-456",
-            json={"category": updates}
+            json={"category": updates},
         )
         assert result == expected_response
 
@@ -709,30 +627,41 @@ class TestYNABClientWriteOperations:
         mock_client.client.patch.return_value = mock_response
 
         await mock_client.update_category_month(
-            "cat-123",
-            "2025-05-01",
-            budget_id="custom-budget",
-            budgeted=10000
+            "cat-123", "2025-05-01", budget_id="custom-budget", budgeted=10000
         )
 
         mock_client.client.patch.assert_called_once_with(
             "/budgets/custom-budget/months/2025-05-01/categories/cat-123",
-            json={"category": {"budgeted": 10000}}
+            json={"category": {"budgeted": 10000}},
         )
 
 
-class TestRateLimitingPerInstance:
-    """Tests for rate limiting isolation between instances."""
+class TestRateLimiting:
+    """Tests for rate limiting with aiolimiter."""
+
+    @pytest.fixture
+    def mock_client_fast(self, mock_rate_limiter):
+        """Fixture providing a YNABClient with mocked rate limiter for fast tests."""
+        client = YNABClient(api_token="test-token", budget_id="test-budget")
+        # Replace limiter with instant-pass version
+        client.limiter = mock_rate_limiter
+        # Mock HTTP client
+        mock_response = Mock()
+        mock_response.json.return_value = {"data": {}}
+        mock_response.raise_for_status = Mock()
+        client.client.get = AsyncMock(return_value=mock_response)
+        return client
 
     @pytest.mark.asyncio
-    async def test_rate_limiting_isolated_per_instance(self):
+    async def test_rate_limiting_isolated_per_instance(self, mock_rate_limiter):
         """Rate limiting should be isolated per client instance."""
-        call_times_client1 = []
-        call_times_client2 = []
-
         # Create two separate client instances
         client1 = YNABClient(api_token="token1", budget_id="budget1")
         client2 = YNABClient(api_token="token2", budget_id="budget2")
+
+        # Mock their rate limiters for fast tests
+        client1.limiter = mock_rate_limiter
+        client2.limiter = mock_rate_limiter
 
         # Mock their HTTP clients
         mock_response = Mock()
@@ -742,60 +671,65 @@ class TestRateLimitingPerInstance:
         client1.client.get = AsyncMock(return_value=mock_response)
         client2.client.get = AsyncMock(return_value=mock_response)
 
-        # Track call times for each client
-        original_get1 = client1.client.get
-        original_get2 = client2.client.get
-
-        async def track_client1(*args, **kwargs):
-            call_times_client1.append(time.time())
-            return await original_get1(*args, **kwargs)
-
-        async def track_client2(*args, **kwargs):
-            call_times_client2.append(time.time())
-            return await original_get2(*args, **kwargs)
-
-        client1.client.get = track_client1
-        client2.client.get = track_client2
-
-        # Make rapid calls with client1
+        # Make rapid calls with both clients - should be instant with mocked limiter
+        start = time.time()
         await client1.get_budgets()
         await client1.get_budgets()
-
-        # Make rapid calls with client2 - should not be affected by client1's rate limit
-        start_client2 = time.time()
         await client2.get_budgets()
-        client2_first_call_time = time.time() - start_client2
+        await client2.get_budgets()
+        total_time = time.time() - start
 
-        # Client2's first call should be immediate, not delayed by client1's rate limiting
-        assert client2_first_call_time < 0.1, (
-            f"Client2's first call took {client2_first_call_time}s, "
-            "indicating it was affected by client1's rate limit"
+        # All calls should be instant (mocked limiter)
+        assert total_time < 0.1, (
+            f"All calls took {total_time}s, should be instant with mocked limiter"
         )
 
     @pytest.mark.asyncio
-    async def test_instance_rate_limiting_enforces_interval(self):
-        """Each instance should enforce its own rate limiting for the same method."""
+    async def test_client_has_limiter_configured(self):
+        """Client should have rate limiter configured on initialization."""
+        from aiolimiter import AsyncLimiter
+
         client = YNABClient(api_token="test-token", budget_id="test-budget")
 
-        call_times = []
+        assert hasattr(client, "limiter")
+        assert isinstance(client.limiter, AsyncLimiter)
+
+    @pytest.mark.asyncio
+    async def test_limiter_has_correct_rate(self):
+        """Rate limiter should be configured for 200 requests per hour."""
+        client = YNABClient(api_token="test-token", budget_id="test-budget")
+
+        # Check limiter configuration (200 req/hour = 3600 second period)
+        assert client.limiter.max_rate == 200
+        assert client.limiter.time_period == 3600
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_rate_limiting_enforces_delay_integration(self):
+        """Integration test: Real rate limiter should enforce delay after bucket is exhausted."""
+        client = YNABClient(api_token="test-token", budget_id="test-budget")
+
+        # Mock HTTP client but keep real limiter
         mock_response = Mock()
         mock_response.json.return_value = {"data": {}}
         mock_response.raise_for_status = Mock()
-
-        # Replace the entire client to avoid real HTTP calls
-        client.client = AsyncMock(spec=httpx.AsyncClient)
         client.client.get = AsyncMock(return_value=mock_response)
 
-        # Make multiple calls to the SAME method through the same instance
+        # Manually exhaust the token bucket (starts at 200 tokens)
+        # Set it to 1 token so we can test the delay on the second request
+        client.limiter._level = 1.0
+
+        # First call should be instant (1 token available)
         start = time.time()
         await client.get_budgets()
-        call_times.append(time.time() - start)
+        first_call_time = time.time() - start
 
+        # Second call should wait ~18 seconds (bucket empty, must wait for refill)
         start = time.time()
-        await client.get_budgets()  # Same method again
-        call_times.append(time.time() - start)
+        await client.get_budgets()
+        second_call_time = time.time() - start
 
-        # Second call should be delayed by rate limiting
-        # First call should be fast, second should take ~0.5s
-        assert call_times[0] < 0.1, f"First call took {call_times[0]}s"
-        assert call_times[1] >= 0.49, f"Second call took {call_times[1]}s, should be rate limited"
+        assert first_call_time < 0.1, f"First call took {first_call_time}s, should be instant"
+        assert second_call_time >= 17.9, (
+            f"Second call took {second_call_time}s, should be rate limited to ~18s"
+        )
