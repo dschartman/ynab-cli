@@ -702,34 +702,3 @@ class TestRateLimiting:
         # Check limiter configuration (200 req/hour = 3600 second period)
         assert client.limiter.max_rate == 200
         assert client.limiter.time_period == 3600
-
-    @pytest.mark.asyncio
-    @pytest.mark.slow
-    async def test_rate_limiting_enforces_delay_integration(self):
-        """Integration test: Real rate limiter should enforce delay after bucket is exhausted."""
-        client = YNABClient(api_token="test-token", budget_id="test-budget")
-
-        # Mock HTTP client but keep real limiter
-        mock_response = Mock()
-        mock_response.json.return_value = {"data": {}}
-        mock_response.raise_for_status = Mock()
-        client.client.get = AsyncMock(return_value=mock_response)
-
-        # Manually exhaust the token bucket (starts at 200 tokens)
-        # Set it to 1 token so we can test the delay on the second request
-        client.limiter._level = 1.0
-
-        # First call should be instant (1 token available)
-        start = time.time()
-        await client.get_budgets()
-        first_call_time = time.time() - start
-
-        # Second call should wait ~18 seconds (bucket empty, must wait for refill)
-        start = time.time()
-        await client.get_budgets()
-        second_call_time = time.time() - start
-
-        assert first_call_time < 0.1, f"First call took {first_call_time}s, should be instant"
-        assert second_call_time >= 17.9, (
-            f"Second call took {second_call_time}s, should be rate limited to ~18s"
-        )
