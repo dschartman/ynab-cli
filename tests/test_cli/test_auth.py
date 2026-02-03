@@ -2,9 +2,8 @@
 Tests for authentication commands (login/logout).
 """
 
-import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -45,13 +44,7 @@ class TestLoginCommand:
     def test_login_with_valid_token(self, runner, temp_config_dir, clean_env):
         """Test login command with valid API token."""
         # Mock the YNAB API client
-        mock_user_response = {
-            "data": {
-                "user": {
-                    "id": "user-123"
-                }
-            }
-        }
+        mock_user_response = {"data": {"user": {"id": "user-123"}}}
 
         with patch("ynab_cli.cli.auth.YNABClient") as MockClient:
             # Setup mock client instance
@@ -62,11 +55,7 @@ class TestLoginCommand:
             MockClient.return_value = mock_instance
 
             # Run command with token input
-            result = runner.invoke(
-                app,
-                ["login"],
-                input="test-token-123\nlast-used\n"
-            )
+            result = runner.invoke(app, ["login"], input="test-token-123\nlast-used\n")
 
             assert result.exit_code == 0
             assert "Success" in result.stdout or "success" in result.stdout
@@ -91,11 +80,7 @@ class TestLoginCommand:
             mock_instance.__aexit__ = AsyncMock(return_value=None)
             MockClient.return_value = mock_instance
 
-            result = runner.invoke(
-                app,
-                ["login"],
-                input="test-token\ncustom-budget-id\n"
-            )
+            result = runner.invoke(app, ["login"], input="test-token\ncustom-budget-id\n")
 
             assert result.exit_code == 0
 
@@ -114,11 +99,7 @@ class TestLoginCommand:
             mock_instance.__aexit__ = AsyncMock(return_value=None)
             MockClient.return_value = mock_instance
 
-            result = runner.invoke(
-                app,
-                ["login"],
-                input="invalid-token\nlast-used\n"
-            )
+            result = runner.invoke(app, ["login"], input="invalid-token\nlast-used\n")
 
             assert result.exit_code == 1
             # Check both stdout and stderr for error messages
@@ -142,11 +123,7 @@ class TestLoginCommand:
             mock_instance.__aexit__ = AsyncMock(return_value=None)
             MockClient.return_value = mock_instance
 
-            result = runner.invoke(
-                app,
-                ["login"],
-                input="hidden-token\nlast-used\n"
-            )
+            result = runner.invoke(app, ["login"], input="hidden-token\nlast-used\n")
 
             assert result.exit_code == 0
             # Token should not be visible in the output
@@ -156,18 +133,12 @@ class TestLoginCommand:
         """Test login command handles network errors gracefully."""
         with patch("ynab_cli.cli.auth.YNABClient") as MockClient:
             mock_instance = AsyncMock()
-            mock_instance.get_user = AsyncMock(
-                side_effect=Exception("Network connection failed")
-            )
+            mock_instance.get_user = AsyncMock(side_effect=Exception("Network connection failed"))
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
             mock_instance.__aexit__ = AsyncMock(return_value=None)
             MockClient.return_value = mock_instance
 
-            result = runner.invoke(
-                app,
-                ["login"],
-                input="test-token\nlast-used\n"
-            )
+            result = runner.invoke(app, ["login"], input="test-token\nlast-used\n")
 
             assert result.exit_code == 1
             # Check both stdout and stderr for error messages
@@ -185,11 +156,7 @@ class TestLoginCommand:
             mock_instance.__aexit__ = AsyncMock(return_value=None)
             MockClient.return_value = mock_instance
 
-            result = runner.invoke(
-                app,
-                ["login"],
-                input="test-token\nlast-used\n"
-            )
+            result = runner.invoke(app, ["login"], input="test-token\nlast-used\n")
 
             assert result.exit_code == 0
             # Should mention where credentials are saved
@@ -205,11 +172,7 @@ class TestLoginCommand:
             mock_instance.__aexit__ = AsyncMock(return_value=None)
             MockClient.return_value = mock_instance
 
-            result = runner.invoke(
-                app,
-                ["login"],
-                input="bad-token\nlast-used\n"
-            )
+            result = runner.invoke(app, ["login"], input="bad-token\nlast-used\n")
 
             # Should fail and NOT create config file
             assert result.exit_code == 1
@@ -231,11 +194,7 @@ class TestLoginCommand:
             mock_instance.__aexit__ = AsyncMock(return_value=None)
             MockClient.return_value = mock_instance
 
-            result = runner.invoke(
-                app,
-                ["login"],
-                input="new-token\nnew-budget\n"
-            )
+            result = runner.invoke(app, ["login"], input="new-token\nnew-budget\n")
 
             assert result.exit_code == 0
 

@@ -2,9 +2,8 @@
 Tests for CLI entry point (cli/main.py).
 """
 
-import pytest
-from ynab_cli.cli.main import app
 from ynab_cli import __version__
+from ynab_cli.cli.main import app
 
 
 def test_cli_help(cli_runner):

@@ -1,17 +1,16 @@
 """Error handling utilities for YNAB CLI."""
 
 import traceback
-from typing import Optional
 
 import httpx
 
-from .context import is_debug
+from ynab_cli.context import is_debug
 
 
 class YNABAPIError(Exception):
     """Base exception for YNAB API errors."""
 
-    def __init__(self, message: str, status_code: Optional[int] = None):
+    def __init__(self, message: str, status_code: int | None = None):
         """
         Initialize YNAB API error.
 
@@ -47,7 +46,7 @@ class YNABNotFoundError(YNABAPIError):
 class YNABNetworkError(Exception):
     """Exception for network-related errors."""
 
-    def __init__(self, message: str, original_error: Optional[Exception] = None):
+    def __init__(self, message: str, original_error: Exception | None = None):
         """
         Initialize network error.
 
@@ -103,8 +102,7 @@ def format_api_error(error: Exception) -> Exception:
             )
         elif status_code == 403:
             return YNABAPIError(
-                "Access denied. You don't have permission to access this resource.",
-                status_code=403
+                "Access denied. You don't have permission to access this resource.", status_code=403
             )
         elif status_code == 404:
             return YNABNotFoundError(
@@ -114,43 +112,35 @@ def format_api_error(error: Exception) -> Exception:
             return YNABAPIError(
                 "Rate limit exceeded. YNAB API limits requests to 200 per hour. "
                 "Please wait before making more requests.",
-                status_code=429
+                status_code=429,
             )
         elif status_code >= 500:
             return YNABAPIError(
-                "YNAB server error. The YNAB API is experiencing issues. "
-                "Please try again later.",
-                status_code=status_code
+                "YNAB server error. The YNAB API is experiencing issues. Please try again later.",
+                status_code=status_code,
             )
         else:
             return YNABAPIError(
-                f"API request failed with status {status_code}: {str(error)}",
-                status_code=status_code
+                f"API request failed with status {status_code}: {error!s}", status_code=status_code
             )
 
     # Network Errors
     elif isinstance(error, httpx.TimeoutException):
         return YNABNetworkError(
             "Request timed out. Please check your internet connection and try again.",
-            original_error=error
+            original_error=error,
         )
     elif isinstance(error, httpx.ConnectError):
         return YNABNetworkError(
-            "Connection failed. Unable to reach YNAB API. "
-            "Please check your internet connection.",
-            original_error=error
+            "Connection failed. Unable to reach YNAB API. Please check your internet connection.",
+            original_error=error,
         )
     elif isinstance(error, httpx.RequestError):
-        return YNABNetworkError(
-            f"Network error: {str(error)}",
-            original_error=error
-        )
+        return YNABNetworkError(f"Network error: {error!s}", original_error=error)
 
     # Value Errors (invalid data)
     elif isinstance(error, ValueError):
-        return YNABAPIError(
-            f"Invalid data received: {str(error)}"
-        )
+        return YNABAPIError(f"Invalid data received: {error!s}")
 
     # Generic fallback
     else:

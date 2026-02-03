@@ -4,7 +4,6 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from typer.testing import CliRunner
 
 from ynab_cli.cli.main import app
 
@@ -56,7 +55,7 @@ def mock_accounts_response():
                     "uncleared_balance": 0,
                 },
             ],
-            "server_knowledge": 123
+            "server_knowledge": 123,
         }
     }
 
@@ -69,10 +68,13 @@ class TestAccountsList:
         with patch("ynab_cli.cli.accounts.settings", None):
             result = cli_runner.invoke(app, ["accounts", "list"])
             assert result.exit_code != 0
-            assert "API token not configured" in result.stdout or "API token is required" in result.stdout
+            assert (
+                "API token not configured" in result.stdout
+                or "API token is required" in result.stdout
+            )
 
     def test_accounts_list_basic(self, cli_runner, mock_accounts_response):
-        """Test basic accounts list command."""
+        """Test basic accounts list command (default JSON output)."""
         mock_settings = MagicMock()
         mock_settings.api_token = "test-token"
         mock_settings.default_budget_id = "budget-1"
@@ -90,26 +92,18 @@ class TestAccountsList:
                 result = cli_runner.invoke(app, ["accounts", "list"])
 
                 assert result.exit_code == 0
-                # Check account names
-                assert "Checking Account" in result.stdout
-                assert "Savings Account" in result.stdout
-                assert "Credit Card" in result.stdout
 
-                # Check formatted balances (milliunits converted to dollars)
-                assert "123.45" in result.stdout
-                assert "5000.00" in result.stdout or "5,000.00" in result.stdout
-                assert "-50.00" in result.stdout
-
-                # Check account types
-                assert "checking" in result.stdout
-                assert "savings" in result.stdout
-                assert "creditCard" in result.stdout
+                # Verify output is valid JSON (default)
+                output_data = json.loads(result.stdout)
+                assert "accounts" in output_data
+                assert len(output_data["accounts"]) == 4
+                assert output_data["accounts"][0]["name"] == "Checking Account"
 
                 # Verify client was called with default budget
                 mock_client.get_accounts.assert_called_once_with(budget_id=None)
 
-    def test_accounts_list_json_output(self, cli_runner, mock_accounts_response):
-        """Test accounts list with JSON output."""
+    def test_accounts_list_table_output(self, cli_runner, mock_accounts_response):
+        """Test accounts list with table output."""
         mock_settings = MagicMock()
         mock_settings.api_token = "test-token"
         mock_settings.default_budget_id = "budget-1"
@@ -123,15 +117,19 @@ class TestAccountsList:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["accounts", "list", "--json"])
+                result = cli_runner.invoke(app, ["accounts", "list", "--table"])
 
                 assert result.exit_code == 0
 
-                # Verify output is valid JSON
-                output_data = json.loads(result.stdout)
-                assert "accounts" in output_data
-                assert len(output_data["accounts"]) == 4
-                assert output_data["accounts"][0]["name"] == "Checking Account"
+                # Check account names
+                assert "Checking Account" in result.stdout
+                assert "Savings Account" in result.stdout
+                assert "Credit Card" in result.stdout
+
+                # Check formatted balances (milliunits converted to dollars)
+                assert "123.45" in result.stdout
+                assert "5000.00" in result.stdout or "5,000.00" in result.stdout
+                assert "-50.00" in result.stdout
 
     def test_accounts_list_with_budget_override(self, cli_runner, mock_accounts_response):
         """Test accounts list with --budget flag to override default."""
@@ -155,7 +153,7 @@ class TestAccountsList:
                 mock_client.get_accounts.assert_called_once_with(budget_id="budget-2")
 
     def test_accounts_list_shows_closed_status(self, cli_runner, mock_accounts_response):
-        """Test that closed accounts are indicated in output."""
+        """Test that closed accounts are indicated in table output."""
         mock_settings = MagicMock()
         mock_settings.api_token = "test-token"
         mock_settings.default_budget_id = "budget-1"
@@ -169,15 +167,17 @@ class TestAccountsList:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["accounts", "list"])
+                result = cli_runner.invoke(app, ["accounts", "list", "--table"])
 
                 assert result.exit_code == 0
                 # Should show closed indicator for Old Account
                 assert "Old Account" in result.stdout
                 # Look for closed indicator - could be "✓" or "Yes" or "Closed" etc.
-                assert ("closed" in result.stdout.lower() or
-                        "✓" in result.stdout or
-                        "yes" in result.stdout.lower())
+                assert (
+                    "closed" in result.stdout.lower()
+                    or "✓" in result.stdout
+                    or "yes" in result.stdout.lower()
+                )
 
     def test_accounts_list_api_error(self, cli_runner):
         """Test accounts list handles API errors gracefully."""

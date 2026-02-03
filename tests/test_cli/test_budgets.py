@@ -4,7 +4,6 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from typer.testing import CliRunner
 
 from ynab_cli.cli.main import app
 
@@ -26,8 +25,8 @@ def mock_budgets_response():
                         "symbol_first": True,
                         "group_separator": ",",
                         "currency_symbol": "$",
-                        "display_symbol": True
-                    }
+                        "display_symbol": True,
+                    },
                 },
                 {
                     "id": "budget-2",
@@ -40,11 +39,11 @@ def mock_budgets_response():
                         "symbol_first": True,
                         "group_separator": ",",
                         "currency_symbol": "€",
-                        "display_symbol": True
-                    }
-                }
+                        "display_symbol": True,
+                    },
+                },
             ],
-            "server_knowledge": 123
+            "server_knowledge": 123,
         }
     }
 
@@ -66,12 +65,12 @@ def mock_budgets_with_accounts_response():
                         "symbol_first": True,
                         "group_separator": ",",
                         "currency_symbol": "$",
-                        "display_symbol": True
+                        "display_symbol": True,
                     },
                     "accounts": [
                         {"id": "acc-1", "name": "Checking"},
-                        {"id": "acc-2", "name": "Savings"}
-                    ]
+                        {"id": "acc-2", "name": "Savings"},
+                    ],
                 },
                 {
                     "id": "budget-2",
@@ -84,14 +83,12 @@ def mock_budgets_with_accounts_response():
                         "symbol_first": True,
                         "group_separator": ",",
                         "currency_symbol": "€",
-                        "display_symbol": True
+                        "display_symbol": True,
                     },
-                    "accounts": [
-                        {"id": "acc-3", "name": "Credit Card"}
-                    ]
-                }
+                    "accounts": [{"id": "acc-3", "name": "Credit Card"}],
+                },
             ],
-            "server_knowledge": 123
+            "server_knowledge": 123,
         }
     }
 
@@ -104,10 +101,13 @@ class TestBudgetsList:
         with patch("ynab_cli.cli.budgets.settings", None):
             result = cli_runner.invoke(app, ["budgets", "list"])
             assert result.exit_code != 0
-            assert "API token not configured" in result.stdout or "API token is required" in result.stdout
+            assert (
+                "API token not configured" in result.stdout
+                or "API token is required" in result.stdout
+            )
 
     def test_budgets_list_basic(self, cli_runner, mock_budgets_response):
-        """Test basic budgets list command."""
+        """Test basic budgets list command (default JSON output)."""
         mock_settings = MagicMock()
         mock_settings.api_token = "test-token"
         mock_settings.default_budget_id = "budget-1"
@@ -125,16 +125,18 @@ class TestBudgetsList:
                 result = cli_runner.invoke(app, ["budgets", "list"])
 
                 assert result.exit_code == 0
-                assert "My Budget" in result.stdout
-                assert "Another Budget" in result.stdout
-                assert "USD" in result.stdout
-                assert "EUR" in result.stdout
+
+                # Verify output is valid JSON (default)
+                output_data = json.loads(result.stdout)
+                assert "budgets" in output_data
+                assert len(output_data["budgets"]) == 2
+                assert output_data["budgets"][0]["name"] == "My Budget"
 
                 # Verify client was called correctly
                 mock_client.get_budgets.assert_called_once_with(include_accounts=False)
 
-    def test_budgets_list_json_output(self, cli_runner, mock_budgets_response):
-        """Test budgets list with JSON output."""
+    def test_budgets_list_table_output(self, cli_runner, mock_budgets_response):
+        """Test budgets list with table output."""
         mock_settings = MagicMock()
         mock_settings.api_token = "test-token"
         mock_settings.default_budget_id = "budget-1"
@@ -148,18 +150,18 @@ class TestBudgetsList:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["budgets", "list", "--json"])
+                result = cli_runner.invoke(app, ["budgets", "list", "--table"])
 
                 assert result.exit_code == 0
 
-                # Verify output is valid JSON
-                output_data = json.loads(result.stdout)
-                assert "budgets" in output_data
-                assert len(output_data["budgets"]) == 2
-                assert output_data["budgets"][0]["name"] == "My Budget"
+                # Verify output is a table (contains budget names)
+                assert "My Budget" in result.stdout
+                assert "Another Budget" in result.stdout
+                assert "USD" in result.stdout
+                assert "EUR" in result.stdout
 
     def test_budgets_list_with_accounts(self, cli_runner, mock_budgets_with_accounts_response):
-        """Test budgets list with include-accounts flag."""
+        """Test budgets list with include-accounts flag (table output)."""
         mock_settings = MagicMock()
         mock_settings.api_token = "test-token"
         mock_settings.default_budget_id = "budget-1"
@@ -168,12 +170,16 @@ class TestBudgetsList:
         with patch("ynab_cli.cli.budgets.settings", mock_settings):
             with patch("ynab_cli.cli.budgets.YNABClient") as mock_client_class:
                 mock_client = AsyncMock()
-                mock_client.get_budgets = AsyncMock(return_value=mock_budgets_with_accounts_response)
+                mock_client.get_budgets = AsyncMock(
+                    return_value=mock_budgets_with_accounts_response
+                )
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["budgets", "list", "--include-accounts"])
+                result = cli_runner.invoke(
+                    app, ["budgets", "list", "--include-accounts", "--table"]
+                )
 
                 assert result.exit_code == 0
                 # Should show account count

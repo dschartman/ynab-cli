@@ -1,15 +1,15 @@
 """Tests for error handling utilities."""
 
-import httpx
-import pytest
 from unittest.mock import Mock
 
+import httpx
+
 from ynab_cli.error_handling import (
-    format_api_error,
     YNABAPIError,
     YNABAuthenticationError,
-    YNABNotFoundError,
     YNABNetworkError,
+    YNABNotFoundError,
+    format_api_error,
 )
 
 
@@ -52,11 +52,7 @@ class TestFormatAPIError:
         """Should convert 401 HTTPStatusError to YNABAuthenticationError."""
         mock_response = Mock()
         mock_response.status_code = 401
-        http_error = httpx.HTTPStatusError(
-            "Unauthorized",
-            request=Mock(),
-            response=mock_response
-        )
+        http_error = httpx.HTTPStatusError("Unauthorized", request=Mock(), response=mock_response)
 
         result = format_api_error(http_error)
 
@@ -67,11 +63,7 @@ class TestFormatAPIError:
         """Should convert 403 HTTPStatusError to YNABAPIError."""
         mock_response = Mock()
         mock_response.status_code = 403
-        http_error = httpx.HTTPStatusError(
-            "Forbidden",
-            request=Mock(),
-            response=mock_response
-        )
+        http_error = httpx.HTTPStatusError("Forbidden", request=Mock(), response=mock_response)
 
         result = format_api_error(http_error)
 
@@ -83,11 +75,7 @@ class TestFormatAPIError:
         """Should convert 404 HTTPStatusError to YNABNotFoundError."""
         mock_response = Mock()
         mock_response.status_code = 404
-        http_error = httpx.HTTPStatusError(
-            "Not Found",
-            request=Mock(),
-            response=mock_response
-        )
+        http_error = httpx.HTTPStatusError("Not Found", request=Mock(), response=mock_response)
 
         result = format_api_error(http_error)
 
@@ -99,9 +87,7 @@ class TestFormatAPIError:
         mock_response = Mock()
         mock_response.status_code = 429
         http_error = httpx.HTTPStatusError(
-            "Too Many Requests",
-            request=Mock(),
-            response=mock_response
+            "Too Many Requests", request=Mock(), response=mock_response
         )
 
         result = format_api_error(http_error)
@@ -115,9 +101,7 @@ class TestFormatAPIError:
         mock_response = Mock()
         mock_response.status_code = 500
         http_error = httpx.HTTPStatusError(
-            "Internal Server Error",
-            request=Mock(),
-            response=mock_response
+            "Internal Server Error", request=Mock(), response=mock_response
         )
 
         result = format_api_error(http_error)

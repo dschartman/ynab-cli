@@ -1,6 +1,5 @@
 """Tests for months CLI commands."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -49,7 +48,7 @@ def mock_month_response():
                         "activity": -150000,  # -$150.00
                         "balance": 0,
                     },
-                ]
+                ],
             }
         }
     }
@@ -72,7 +71,7 @@ class TestMonthsGet:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["months", "get"])
+                result = cli_runner.invoke(app, ["months", "get", "--table"])
 
                 assert result.exit_code == 0
                 # Should show month summary
@@ -107,8 +106,8 @@ class TestMonthsGet:
                 call_kwargs = mock_client.get_month.call_args[1]
                 assert call_kwargs["month"] == "2024-01-01"
 
-    def test_get_month_json_output(self, cli_runner, mock_month_response):
-        """Test months get with JSON output."""
+    def test_get_month_table_output(self, cli_runner, mock_month_response):
+        """Test months get with table output."""
         mock_settings = MagicMock()
         mock_settings.api_token = "test-token"
         mock_settings.budget_id = "budget-1"
@@ -121,13 +120,12 @@ class TestMonthsGet:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["months", "get", "--json"])
+                result = cli_runner.invoke(app, ["months", "get", "--table"])
 
                 assert result.exit_code == 0
-                # Should output valid JSON
-                output = json.loads(result.stdout)
-                assert output["month"]["month"] == "2024-01-01"
-                assert output["month"]["income"] == 500000
+                # Should show month and summary info
+                assert "2024-01-01" in result.stdout
+                assert "Income" in result.stdout or "income" in result.stdout
 
     def test_get_month_shows_categories(self, cli_runner, mock_month_response):
         """Test that month output includes category breakdown."""
@@ -143,7 +141,7 @@ class TestMonthsGet:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["months", "get"])
+                result = cli_runner.invoke(app, ["months", "get", "--table"])
 
                 assert result.exit_code == 0
                 # Should show category names and amounts
@@ -160,7 +158,7 @@ class TestMonthsGet:
         mock_settings.api_token = None
 
         with patch("ynab_cli.cli.months.settings", mock_settings):
-            result = cli_runner.invoke(app, ["months", "get"])
+            result = cli_runner.invoke(app, ["months", "get", "--table"])
 
             assert result.exit_code != 0
             assert "token" in result.stdout.lower() or "login" in result.stdout.lower()
@@ -179,10 +177,7 @@ class TestMonthsGet:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, [
-                    "months", "get",
-                    "--budget", "different-budget"
-                ])
+                result = cli_runner.invoke(app, ["months", "get", "--budget", "different-budget"])
 
                 assert result.exit_code == 0
                 # Verify budget override was passed
@@ -198,14 +193,12 @@ class TestMonthsGet:
         with patch("ynab_cli.cli.months.settings", mock_settings):
             with patch("ynab_cli.cli.months.YNABClient") as mock_client_class:
                 mock_client = AsyncMock()
-                mock_client.get_month = AsyncMock(
-                    side_effect=Exception("API Error: Invalid month")
-                )
+                mock_client.get_month = AsyncMock(side_effect=Exception("API Error: Invalid month"))
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["months", "get"])
+                result = cli_runner.invoke(app, ["months", "get", "--table"])
 
                 assert result.exit_code != 0
                 assert "Error" in result.stdout or "error" in result.stdout
@@ -224,7 +217,7 @@ class TestMonthsGet:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["months", "get"])
+                result = cli_runner.invoke(app, ["months", "get", "--table"])
 
                 assert result.exit_code == 0
                 # Check that milliunits were converted
@@ -247,9 +240,11 @@ class TestMonthsGet:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["months", "get"])
+                result = cli_runner.invoke(app, ["months", "get", "--table"])
 
                 assert result.exit_code == 0
                 # Should show To Be Budgeted (50000 milliunits = $50.00)
-                assert "To Be Budgeted" in result.stdout or "to be budgeted" in result.stdout.lower()
+                assert (
+                    "To Be Budgeted" in result.stdout or "to be budgeted" in result.stdout.lower()
+                )
                 assert "$50.00" in result.stdout

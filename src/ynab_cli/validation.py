@@ -2,11 +2,11 @@
 
 import re
 from datetime import datetime
-from typing import Union
 
 
 class ValidationError(ValueError):
     """Exception raised for validation errors."""
+
     pass
 
 
@@ -27,17 +27,16 @@ def validate_date(date_str: str) -> str:
         raise ValidationError("Date cannot be empty")
 
     # Check format with regex
-    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", date_str):
         raise ValidationError(
-            f"Invalid date format: '{date_str}'. "
-            "Expected format: YYYY-MM-DD (e.g., 2025-01-15)"
+            f"Invalid date format: '{date_str}'. Expected format: YYYY-MM-DD (e.g., 2025-01-15)"
         )
 
     # Validate actual date values
     try:
         datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError as e:
-        raise ValidationError(f"Invalid date: {str(e)}")
+        raise ValidationError(f"Invalid date: {e!s}") from e
 
     return date_str
 
@@ -61,18 +60,15 @@ def validate_amount(amount_str: str) -> float:
     # Try to convert to float
     try:
         amount = float(amount_str)
-    except ValueError:
-        raise ValidationError(
-            f"Invalid amount: '{amount_str}'. Must be a valid number."
-        )
+    except ValueError as e:
+        raise ValidationError(f"Invalid amount: '{amount_str}'. Must be a valid number.") from e
 
     # Check decimal places
-    if '.' in amount_str:
-        decimal_part = amount_str.split('.')[1]
+    if "." in amount_str:
+        decimal_part = amount_str.split(".")[1]
         if len(decimal_part) > 2:
             raise ValidationError(
-                f"Invalid amount: '{amount_str}'. "
-                "Amount can have at most two decimal places."
+                f"Invalid amount: '{amount_str}'. Amount can have at most two decimal places."
             )
 
     return amount
@@ -99,7 +95,7 @@ def validate_uuid(uuid_str: str) -> str:
         return uuid_str
 
     # UUID format: 8-4-4-4-12 hex digits
-    uuid_pattern = r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+    uuid_pattern = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 
     if not re.match(uuid_pattern, uuid_str):
         raise ValidationError(

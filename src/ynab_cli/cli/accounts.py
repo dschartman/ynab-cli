@@ -2,22 +2,22 @@
 
 import asyncio
 import json
-from typing import Optional
+from typing import Any
 
 import httpx
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from ..api.client import YNABClient
-from ..config import settings
-from ..error_handling import (
+from ynab_cli.api.client import YNABClient
+from ynab_cli.config import settings
+from ynab_cli.error_handling import (
     YNABAPIError,
     YNABAuthenticationError,
     YNABNetworkError,
     format_api_error,
 )
-from ..utils import milliunits_to_dollars
+from ynab_cli.utils import milliunits_to_dollars
 
 accounts_app = typer.Typer(
     name="accounts",
@@ -30,17 +30,17 @@ console = Console()
 
 @accounts_app.command("list")
 def list_accounts(
-    budget: Optional[str] = typer.Option(
+    budget: str | None = typer.Option(
         None,
         "--budget",
         help="Budget ID (overrides default)",
     ),
-    json_output: bool = typer.Option(
+    table_output: bool = typer.Option(
         False,
-        "--json",
-        help="Output as JSON",
+        "--table",
+        help="Output as table (default is JSON)",
     ),
-):
+) -> None:
     """
     List all accounts for a budget.
 
@@ -51,7 +51,7 @@ def list_accounts(
     if not settings or not settings.api_token:
         console.print("[red]Error: API token not configured[/red]")
         console.print("Run 'ynab login' to configure your API token")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     try:
         # Run async operation
@@ -61,43 +61,43 @@ def list_accounts(
         accounts = response["data"]["accounts"]
 
         # Output
-        if json_output:
-            # JSON output
-            output = {"accounts": accounts}
-            console.print(json.dumps(output, indent=2))
-        else:
+        if table_output:
             # Table output
             _print_accounts_table(accounts)
+        else:
+            # JSON output (default)
+            output = {"accounts": accounts}
+            console.print(json.dumps(output, indent=2))
 
     except YNABAuthenticationError as e:
         console.print(f"[red]Authentication Error:[/red] {e.message}")
         console.print("Run 'ynab login' to configure your API token")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except YNABNetworkError as e:
         console.print(f"[red]Network Error:[/red] {e.message}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except YNABAPIError as e:
         console.print(f"[red]API Error:[/red] {e.message}")
         if e.status_code:
             console.print(f"Status code: {e.status_code}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
         # Convert to specific YNAB error
         ynab_error = format_api_error(e)
         console.print(f"[red]Error:[/red] {ynab_error}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
-        console.print(f"[red]Unexpected Error:[/red] {str(e)}")
-        raise typer.Exit(1)
+        console.print(f"[red]Unexpected Error:[/red] {e!s}")
+        raise typer.Exit(1) from None
 
 
-async def _list_accounts_async(budget_id: Optional[str]):
+async def _list_accounts_async(budget_id: str | None) -> dict[str, Any]:
     """Async helper to fetch accounts."""
     async with YNABClient() as client:
         return await client.get_accounts(budget_id=budget_id)
 
 
-def _print_accounts_table(accounts: list):
+def _print_accounts_table(accounts: list) -> None:
     """Print accounts in table format."""
     table = Table(title="Accounts")
     table.add_column("Name", style="green")

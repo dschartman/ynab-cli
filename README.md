@@ -64,6 +64,12 @@ ynab transactions list --limit 10
 
 ## Authentication
 
+The CLI supports multiple configuration methods with the following precedence (highest to lowest):
+
+1. **Environment variables** (system or from `.env` file)
+2. **Config file** at `~/.config/ynab/config.toml`
+3. **Defaults** (budget_id = 'last-used')
+
 ### Using the Login Command (Recommended)
 
 ```bash
@@ -72,6 +78,21 @@ ynab login
 
 This stores your credentials in `~/.config/ynab/config.toml`.
 
+### Using a .env File
+
+Create a `.env` file in your project directory:
+
+```bash
+# Copy .env.example to .env
+cp .env.example .env
+
+# Edit .env with your credentials
+YNAB_API_TOKEN=your_token_here
+YNAB_BUDGET_ID=last-used
+```
+
+The `.env` file is automatically loaded and takes precedence over the config file.
+
 ### Using Environment Variables
 
 ```bash
@@ -79,7 +100,7 @@ export YNAB_API_TOKEN="your_token_here"
 export YNAB_BUDGET_ID="last-used"  # or specific budget UUID
 ```
 
-Environment variables take precedence over the config file.
+System environment variables take precedence over both `.env` files and the config file.
 
 ### Budget ID Shortcuts
 
@@ -239,6 +260,15 @@ ynab months get current --json | \\
 
 ## Configuration
 
+### Configuration Sources (Priority Order)
+
+The CLI reads configuration from multiple sources in this priority order:
+
+1. **System Environment Variables** - Set with `export`
+2. **.env File** - In current directory or project root (auto-loaded)
+3. **Config File** - `~/.config/ynab/config.toml`
+4. **Defaults** - `budget_id = "last-used"`
+
 ### Config File Location
 
 `~/.config/ynab/config.toml`
@@ -250,12 +280,29 @@ api_token = "your_token_here"
 budget_id = "last-used"
 ```
 
+### .env File
+
+Create a `.env` file in your project directory:
+
+```bash
+# .env
+YNAB_API_TOKEN=your_token_here
+YNAB_BUDGET_ID=last-used
+```
+
+The `.env` file is automatically loaded and is useful for:
+- Project-specific configurations
+- Keeping credentials out of version control (add `.env` to `.gitignore`)
+- Claude Code automation scripts
+
+A `.env.example` file is provided as a template.
+
 ### Environment Variables
 
 - `YNAB_API_TOKEN` - Your YNAB API token
 - `YNAB_BUDGET_ID` - Default budget ID
 
-Priority: Environment variables > Config file > Defaults
+System environment variables always take highest precedence.
 
 ## Milliunits
 

@@ -2,23 +2,23 @@
 
 import asyncio
 import json
-from typing import Optional
+from typing import Any
 
 import httpx
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from ..api.client import YNABClient
-from ..config import settings
-from ..error_handling import (
+from ynab_cli.api.client import YNABClient
+from ynab_cli.config import settings
+from ynab_cli.error_handling import (
     YNABAPIError,
     YNABAuthenticationError,
     YNABNetworkError,
     format_api_error,
     get_error_details,
 )
-from ..utils import dollars_to_milliunits, milliunits_to_dollars
+from ynab_cli.utils import dollars_to_milliunits, milliunits_to_dollars
 
 transactions_app = typer.Typer(
     name="transactions",
@@ -50,7 +50,7 @@ def handle_cli_error(error: Exception) -> None:
         ynab_error = format_api_error(error)
         console.print(f"[red]Error:[/red] {ynab_error}")
     else:
-        console.print(f"[red]Unexpected Error:[/red] {str(error)}")
+        console.print(f"[red]Unexpected Error:[/red] {error!s}")
 
     # Show detailed debug info if debug mode is enabled
     details = get_error_details(error)
@@ -61,32 +61,32 @@ def handle_cli_error(error: Exception) -> None:
 
 @transactions_app.command("list")
 def list_transactions(
-    budget: Optional[str] = typer.Option(
+    budget: str | None = typer.Option(
         None,
         "--budget",
         help="Budget ID (overrides default)",
     ),
-    since_date: Optional[str] = typer.Option(
+    since_date: str | None = typer.Option(
         None,
         "--since-date",
         help="Only transactions on or after this date (YYYY-MM-DD)",
     ),
-    transaction_type: Optional[str] = typer.Option(
+    transaction_type: str | None = typer.Option(
         None,
         "--type",
         help="Filter by type",
     ),
-    limit: Optional[int] = typer.Option(
+    limit: int | None = typer.Option(
         None,
         "--limit",
         help="Maximum number of transactions to show",
     ),
-    json_output: bool = typer.Option(
+    table_output: bool = typer.Option(
         False,
-        "--json",
-        help="Output as JSON",
+        "--table",
+        help="Output as table (default is JSON)",
     ),
-):
+) -> None:
     """
     List transactions for a budget.
 
@@ -97,15 +97,17 @@ def list_transactions(
     if not settings or not settings.api_token:
         console.print("[red]Error: API token not configured[/red]")
         console.print("Run 'ynab login' to configure your API token")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     try:
         # Run async operation
-        response = asyncio.run(_list_transactions_async(
-            budget_id=budget,
-            since_date=since_date,
-            transaction_type=transaction_type,
-        ))
+        response = asyncio.run(
+            _list_transactions_async(
+                budget_id=budget,
+                since_date=since_date,
+                transaction_type=transaction_type,
+            )
+        )
 
         # Extract transactions from response
         transactions = response["data"]["transactions"]
@@ -115,24 +117,24 @@ def list_transactions(
             transactions = transactions[:limit]
 
         # Output
-        if json_output:
-            # JSON output
-            output = {"transactions": transactions}
-            console.print(json.dumps(output, indent=2))
-        else:
+        if table_output:
             # Table output
             _print_transactions_table(transactions)
+        else:
+            # JSON output (default)
+            output = {"transactions": transactions}
+            console.print(json.dumps(output, indent=2))
 
     except Exception as e:
         handle_cli_error(e)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 async def _list_transactions_async(
-    budget_id: Optional[str],
-    since_date: Optional[str],
-    transaction_type: Optional[str],
-):
+    budget_id: str | None,
+    since_date: str | None,
+    transaction_type: str | None,
+) -> dict[str, Any]:
     """Async helper to fetch transactions."""
     async with YNABClient() as client:
         return await client.get_transactions(
@@ -142,7 +144,7 @@ async def _list_transactions_async(
         )
 
 
-def _print_transactions_table(transactions: list):
+def _print_transactions_table(transactions: list) -> None:
     """Print transactions in table format."""
     table = Table(title="Transactions")
     table.add_column("Date", style="cyan")
@@ -198,17 +200,17 @@ def create_transaction(
         "--amount",
         help="Amount in dollars (negative for expenses, positive for income)",
     ),
-    payee: Optional[str] = typer.Option(
+    payee: str | None = typer.Option(
         None,
         "--payee",
         help="Payee ID",
     ),
-    category: Optional[str] = typer.Option(
+    category: str | None = typer.Option(
         None,
         "--category",
         help="Category ID",
     ),
-    memo: Optional[str] = typer.Option(
+    memo: str | None = typer.Option(
         None,
         "--memo",
         help="Transaction memo",
@@ -223,17 +225,17 @@ def create_transaction(
         "--approved",
         help="Mark transaction as approved",
     ),
-    budget: Optional[str] = typer.Option(
+    budget: str | None = typer.Option(
         None,
         "--budget",
         help="Budget ID (overrides default)",
     ),
-    json_output: bool = typer.Option(
+    table_output: bool = typer.Option(
         False,
-        "--json",
-        help="Output as JSON",
+        "--table",
+        help="Output as table (default is JSON)",
     ),
-):
+) -> None:
     """
     Create a new transaction.
 
@@ -253,7 +255,7 @@ def create_transaction(
     if not settings or not settings.api_token:
         console.print("[red]Error: API token not configured[/red]")
         console.print("Run 'ynab login' to configure your API token")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     try:
         # Convert amount to milliunits
@@ -279,32 +281,35 @@ def create_transaction(
             transaction["approved"] = True
 
         # Run async operation
-        response = asyncio.run(_create_transaction_async(
-            budget_id=budget,
-            transaction=transaction,
-        ))
+        response = asyncio.run(
+            _create_transaction_async(
+                budget_id=budget,
+                transaction=transaction,
+            )
+        )
 
         # Extract created transaction
         created = response["data"]["transaction"]
 
         # Output
-        if json_output:
-            console.print(json.dumps({"transaction": created}, indent=2))
-        else:
-            console.print(f"[green]✓ Transaction created successfully[/green]")
+        if table_output:
+            console.print("[green]✓ Transaction created successfully[/green]")
             console.print(f"ID: {created['id']}")
             console.print(f"Date: {created['date']}")
             console.print(f"Amount: ${milliunits_to_dollars(created['amount']):,.2f}")
+        else:
+            # JSON output (default)
+            console.print(json.dumps({"transaction": created}, indent=2))
 
     except Exception as e:
         handle_cli_error(e)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 async def _create_transaction_async(
-    budget_id: Optional[str],
+    budget_id: str | None,
     transaction: dict,
-):
+) -> dict[str, Any]:
     """Async helper to create a transaction."""
     async with YNABClient() as client:
         return await client.create_transaction(
@@ -319,32 +324,32 @@ def update_transaction(
         ...,
         help="Transaction ID to update",
     ),
-    account: Optional[str] = typer.Option(
+    account: str | None = typer.Option(
         None,
         "--account",
         help="Account ID",
     ),
-    date: Optional[str] = typer.Option(
+    date: str | None = typer.Option(
         None,
         "--date",
         help="Transaction date (YYYY-MM-DD)",
     ),
-    amount: Optional[float] = typer.Option(
+    amount: float | None = typer.Option(
         None,
         "--amount",
         help="Amount in dollars",
     ),
-    payee: Optional[str] = typer.Option(
+    payee: str | None = typer.Option(
         None,
         "--payee",
         help="Payee ID",
     ),
-    category: Optional[str] = typer.Option(
+    category: str | None = typer.Option(
         None,
         "--category",
         help="Category ID",
     ),
-    memo: Optional[str] = typer.Option(
+    memo: str | None = typer.Option(
         None,
         "--memo",
         help="Transaction memo",
@@ -359,17 +364,17 @@ def update_transaction(
         "--approved",
         help="Mark transaction as approved",
     ),
-    budget: Optional[str] = typer.Option(
+    budget: str | None = typer.Option(
         None,
         "--budget",
         help="Budget ID (overrides default)",
     ),
-    json_output: bool = typer.Option(
+    table_output: bool = typer.Option(
         False,
-        "--json",
-        help="Output as JSON",
+        "--table",
+        help="Output as table (default is JSON)",
     ),
-):
+) -> None:
     """
     Update an existing transaction.
 
@@ -386,11 +391,11 @@ def update_transaction(
     if not settings or not settings.api_token:
         console.print("[red]Error: API token not configured[/red]")
         console.print("Run 'ynab login' to configure your API token")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     try:
         # Build updates object
-        updates = {}
+        updates: dict[str, Any] = {}
 
         if account:
             updates["account_id"] = account
@@ -410,32 +415,35 @@ def update_transaction(
             updates["approved"] = True
 
         # Run async operation
-        response = asyncio.run(_update_transaction_async(
-            transaction_id=transaction_id,
-            budget_id=budget,
-            updates=updates,
-        ))
+        response = asyncio.run(
+            _update_transaction_async(
+                transaction_id=transaction_id,
+                budget_id=budget,
+                updates=updates,
+            )
+        )
 
         # Extract updated transaction
         updated = response["data"]["transaction"]
 
         # Output
-        if json_output:
-            console.print(json.dumps({"transaction": updated}, indent=2))
-        else:
-            console.print(f"[green]✓ Transaction updated successfully[/green]")
+        if table_output:
+            console.print("[green]✓ Transaction updated successfully[/green]")
             console.print(f"ID: {updated['id']}")
+        else:
+            # JSON output (default)
+            console.print(json.dumps({"transaction": updated}, indent=2))
 
     except Exception as e:
         handle_cli_error(e)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 async def _update_transaction_async(
     transaction_id: str,
-    budget_id: Optional[str],
+    budget_id: str | None,
     updates: dict,
-):
+) -> dict[str, Any]:
     """Async helper to update a transaction."""
     async with YNABClient() as client:
         return await client.update_transaction(
@@ -456,12 +464,12 @@ def delete_transaction(
         "--confirm",
         help="Skip confirmation prompt",
     ),
-    budget: Optional[str] = typer.Option(
+    budget: str | None = typer.Option(
         None,
         "--budget",
         help="Budget ID (overrides default)",
     ),
-):
+) -> None:
     """
     Delete a transaction.
 
@@ -478,35 +486,35 @@ def delete_transaction(
     if not settings or not settings.api_token:
         console.print("[red]Error: API token not configured[/red]")
         console.print("Run 'ynab login' to configure your API token")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     # Prompt for confirmation if not provided
     if not confirm:
-        confirmed = typer.confirm(
-            f"Are you sure you want to delete transaction {transaction_id}?"
-        )
+        confirmed = typer.confirm(f"Are you sure you want to delete transaction {transaction_id}?")
         if not confirmed:
             console.print("Cancelled")
             raise typer.Exit(0)
 
     try:
         # Run async operation
-        asyncio.run(_delete_transaction_async(
-            transaction_id=transaction_id,
-            budget_id=budget,
-        ))
+        asyncio.run(
+            _delete_transaction_async(
+                transaction_id=transaction_id,
+                budget_id=budget,
+            )
+        )
 
         console.print(f"[green]✓ Transaction {transaction_id} deleted successfully[/green]")
 
     except Exception as e:
         handle_cli_error(e)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 async def _delete_transaction_async(
     transaction_id: str,
-    budget_id: Optional[str],
-):
+    budget_id: str | None,
+) -> dict[str, Any]:
     """Async helper to delete a transaction."""
     async with YNABClient() as client:
         return await client.delete_transaction(
@@ -537,17 +545,17 @@ def transfer_between_accounts(
         "--date",
         help="Transfer date (YYYY-MM-DD)",
     ),
-    memo: Optional[str] = typer.Option(
+    memo: str | None = typer.Option(
         None,
         "--memo",
         help="Transfer memo",
     ),
-    budget: Optional[str] = typer.Option(
+    budget: str | None = typer.Option(
         None,
         "--budget",
         help="Budget ID (overrides default)",
     ),
-):
+) -> None:
     """
     Create a transfer between two accounts.
 
@@ -567,7 +575,7 @@ def transfer_between_accounts(
     if not settings or not settings.api_token:
         console.print("[red]Error: API token not configured[/red]")
         console.print("Run 'ynab login' to configure your API token")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     try:
         # Fetch accounts to get IDs and transfer payee IDs
@@ -588,11 +596,11 @@ def transfer_between_accounts(
         # Validate accounts were found
         if not source_account:
             console.print(f"[red]Error: Source account '{from_account}' not found[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
         if not dest_account:
             console.print(f"[red]Error: Destination account '{to_account}' not found[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
         # Build transfer transaction
         # Amount is negative (leaving source account)
@@ -608,14 +616,16 @@ def transfer_between_accounts(
             transaction["memo"] = memo
 
         # Create transaction (YNAB creates matching transaction automatically)
-        response = asyncio.run(_create_transaction_async(
-            budget_id=budget,
-            transaction=transaction,
-        ))
+        response = asyncio.run(
+            _create_transaction_async(
+                budget_id=budget,
+                transaction=transaction,
+            )
+        )
 
         created = response["data"]["transaction"]
 
-        console.print(f"[green]✓ Transfer created successfully[/green]")
+        console.print("[green]✓ Transfer created successfully[/green]")
         console.print(f"From: {source_account['name']}")
         console.print(f"To: {dest_account['name']}")
         console.print(f"Amount: ${abs(amount):,.2f}")
@@ -625,10 +635,10 @@ def transfer_between_accounts(
         raise
     except Exception as e:
         handle_cli_error(e)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
-async def _get_accounts_async(budget_id: Optional[str]):
+async def _get_accounts_async(budget_id: str | None) -> dict[str, Any]:
     """Async helper to fetch accounts."""
     async with YNABClient() as client:
         return await client.get_accounts(budget_id=budget_id)

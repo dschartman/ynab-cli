@@ -1,28 +1,45 @@
 """
 Configuration management for YNAB CLI.
 
-Handles configuration file at ~/.config/ynab/config.toml and environment variables.
-Priority: Environment variables > Config file > Defaults
+Handles configuration from multiple sources:
+1. Environment variables (YNAB_API_TOKEN, YNAB_BUDGET_ID)
+2. .env file in current directory or project root
+3. Config file at ~/.config/ynab/config.toml
+4. Defaults (budget_id = 'last-used')
+
+Priority: Environment variables > .env file > Config file > Defaults
 """
 
 import os
 import tomllib
 from pathlib import Path
+from typing import Any
+
+from dotenv import load_dotenv
+
+# Load .env file if it exists
+# This must happen at module import time to populate os.environ
+# before Settings instances are created
+load_dotenv()
 
 
 class Settings:
     """
     YNAB CLI settings manager.
 
-    Reads configuration from:
+    Reads configuration from (in priority order):
     1. Environment variables (YNAB_API_TOKEN, YNAB_BUDGET_ID)
-    2. Config file at ~/.config/ynab/config.toml
-    3. Defaults (budget_id = 'last-used')
+    2. .env file in current directory or project root (auto-loaded)
+    3. Config file at ~/.config/ynab/config.toml
+    4. Defaults (budget_id = 'last-used')
+
+    Note: .env files are loaded automatically when this module is imported.
+    Environment variables from .env files are treated the same as system env vars.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize settings."""
-        self._config_cache = None
+        self._config_cache: dict[str, Any] | None = None
 
     @property
     def config_dir(self) -> Path:
@@ -34,7 +51,7 @@ class Settings:
         """Get config file path (~/.config/ynab/config.toml)."""
         return self.config_dir / "config.toml"
 
-    def _read_config_file(self) -> dict:
+    def _read_config_file(self) -> dict[str, Any]:
         """
         Read and parse the TOML config file.
 
@@ -49,7 +66,7 @@ class Settings:
             return self._config_cache
 
         try:
-            with open(self.config_file, "rb") as f:
+            with self.config_file.open("rb") as f:
                 self._config_cache = tomllib.load(f)
             return self._config_cache
         except (tomllib.TOMLDecodeError, OSError):
@@ -63,8 +80,8 @@ class Settings:
         Get API token.
 
         Priority:
-        1. YNAB_API_TOKEN environment variable
-        2. api_token from config file
+        1. YNAB_API_TOKEN environment variable (includes .env file)
+        2. api_token from config file (~/.config/ynab/config.toml)
         3. None
 
         Returns:
@@ -85,8 +102,8 @@ class Settings:
         Get budget ID.
 
         Priority:
-        1. YNAB_BUDGET_ID environment variable
-        2. budget_id from config file
+        1. YNAB_BUDGET_ID environment variable (includes .env file)
+        2. budget_id from config file (~/.config/ynab/config.toml)
         3. 'last-used' (default)
 
         Returns:
@@ -101,7 +118,7 @@ class Settings:
         config = self._read_config_file()
         file_budget = config.get("budget_id")
         if file_budget:
-            return file_budget
+            return str(file_budget)
 
         # Priority 3: Default
         return "last-used"

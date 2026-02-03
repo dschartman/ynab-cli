@@ -2,22 +2,22 @@
 
 import asyncio
 import json
-from typing import Optional
+from typing import Any
 
 import httpx
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from ..api.client import YNABClient
-from ..config import settings
-from ..error_handling import (
+from ynab_cli.api.client import YNABClient
+from ynab_cli.config import settings
+from ynab_cli.error_handling import (
     YNABAPIError,
     YNABAuthenticationError,
     YNABNetworkError,
     format_api_error,
 )
-from ..utils import milliunits_to_dollars
+from ynab_cli.utils import milliunits_to_dollars
 
 months_app = typer.Typer(
     name="months",
@@ -34,17 +34,17 @@ def get_month(
         "current",
         help="Month in YYYY-MM-01 format or 'current'",
     ),
-    budget: Optional[str] = typer.Option(
+    budget: str | None = typer.Option(
         None,
         "--budget",
         help="Budget ID (overrides default)",
     ),
-    json_output: bool = typer.Option(
+    table_output: bool = typer.Option(
         False,
-        "--json",
-        help="Output as JSON",
+        "--table",
+        help="Output as table (default is JSON)",
     ),
-):
+) -> None:
     """
     Get budget month details with category breakdown.
 
@@ -65,47 +65,50 @@ def get_month(
     if not settings or not settings.api_token:
         console.print("[red]Error: API token not configured[/red]")
         console.print("Run 'ynab login' to configure your API token")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     try:
         # Run async operation
-        response = asyncio.run(_get_month_async(
-            month=month,
-            budget_id=budget,
-        ))
+        response = asyncio.run(
+            _get_month_async(
+                month=month,
+                budget_id=budget,
+            )
+        )
 
         # Extract month data
         month_data = response["data"]["month"]
 
         # Output
-        if json_output:
-            console.print(json.dumps({"month": month_data}, indent=2))
-        else:
+        if table_output:
             _print_month_summary(month_data)
+        else:
+            # JSON output (default)
+            console.print(json.dumps({"month": month_data}, indent=2))
 
     except YNABAuthenticationError as e:
         console.print(f"[red]Authentication Error:[/red] {e.message}")
         console.print("Run 'ynab login' to configure your API token")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except YNABNetworkError as e:
         console.print(f"[red]Network Error:[/red] {e.message}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except YNABAPIError as e:
         console.print(f"[red]API Error:[/red] {e.message}")
         if e.status_code:
             console.print(f"Status code: {e.status_code}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
         # Convert to specific YNAB error
         ynab_error = format_api_error(e)
         console.print(f"[red]Error:[/red] {ynab_error}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
-        console.print(f"[red]Unexpected Error:[/red] {str(e)}")
-        raise typer.Exit(1)
+        console.print(f"[red]Unexpected Error:[/red] {e!s}")
+        raise typer.Exit(1) from None
 
 
-async def _get_month_async(month: str, budget_id: Optional[str]):
+async def _get_month_async(month: str, budget_id: str | None) -> dict[str, Any]:
     """Async helper to fetch month details."""
     async with YNABClient() as client:
         return await client.get_month(
@@ -114,7 +117,7 @@ async def _get_month_async(month: str, budget_id: Optional[str]):
         )
 
 
-def _print_month_summary(month_data: dict):
+def _print_month_summary(month_data: dict) -> None:
     """Print month summary in human-readable format."""
     # Header
     console.print(f"\n[bold cyan]Budget Month: {month_data['month']}[/bold cyan]\n")
@@ -125,36 +128,28 @@ def _print_month_summary(month_data: dict):
     summary_table.add_column("Amount", style="yellow", justify="right")
 
     # Add summary rows
+    summary_table.add_row("Income", f"${milliunits_to_dollars(month_data.get('income', 0)):,.2f}")
     summary_table.add_row(
-        "Income",
-        f"${milliunits_to_dollars(month_data.get('income', 0)):,.2f}"
-    )
-    summary_table.add_row(
-        "Budgeted",
-        f"${milliunits_to_dollars(month_data.get('budgeted', 0)):,.2f}"
+        "Budgeted", f"${milliunits_to_dollars(month_data.get('budgeted', 0)):,.2f}"
     )
 
-    activity = month_data.get('activity', 0)
+    activity = month_data.get("activity", 0)
     activity_str = f"${milliunits_to_dollars(abs(activity)):,.2f}"
     if activity < 0:
         activity_str = f"-{activity_str}"
     summary_table.add_row("Activity", activity_str)
 
     summary_table.add_row(
-        "To Be Budgeted",
-        f"${milliunits_to_dollars(month_data.get('to_be_budgeted', 0)):,.2f}"
+        "To Be Budgeted", f"${milliunits_to_dollars(month_data.get('to_be_budgeted', 0)):,.2f}"
     )
 
-    if 'age_of_money' in month_data:
-        summary_table.add_row(
-            "Age of Money",
-            f"{month_data['age_of_money']} days"
-        )
+    if "age_of_money" in month_data:
+        summary_table.add_row("Age of Money", f"{month_data['age_of_money']} days")
 
     console.print(summary_table)
 
     # Categories table
-    categories = month_data.get('categories', [])
+    categories = month_data.get("categories", [])
     if categories:
         console.print("\n[bold]Categories:[/bold]\n")
 
@@ -166,13 +161,13 @@ def _print_month_summary(month_data: dict):
 
         for category in categories:
             # Skip hidden categories
-            if category.get('hidden', False):
+            if category.get("hidden", False):
                 continue
 
-            name = category.get('name', 'Unknown')
-            budgeted = milliunits_to_dollars(category.get('budgeted', 0))
-            activity = category.get('activity', 0)
-            balance = milliunits_to_dollars(category.get('balance', 0))
+            name = category.get("name", "Unknown")
+            budgeted = milliunits_to_dollars(category.get("budgeted", 0))
+            activity = category.get("activity", 0)
+            balance = milliunits_to_dollars(category.get("balance", 0))
 
             # Format activity (usually negative)
             activity_dollars = milliunits_to_dollars(abs(activity))
@@ -180,12 +175,7 @@ def _print_month_summary(month_data: dict):
             if activity < 0:
                 activity_str = f"-{activity_str}"
 
-            cat_table.add_row(
-                name,
-                f"${budgeted:,.2f}",
-                activity_str,
-                f"${balance:,.2f}"
-            )
+            cat_table.add_row(name, f"${budgeted:,.2f}", activity_str, f"${balance:,.2f}")
 
         console.print(cat_table)
         console.print()

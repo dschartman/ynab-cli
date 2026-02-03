@@ -2,11 +2,9 @@
 
 import logging
 import sys
-from typing import Optional
-
 
 # Module-level logger
-_logger: Optional[logging.Logger] = None
+_logger: logging.Logger | None = None
 _verbose_enabled = False
 
 
@@ -35,8 +33,7 @@ def setup_logging(verbose: bool = False) -> None:
 
     # Create formatter
     formatter = logging.Formatter(
-        "[%(asctime)s] %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+        "[%(asctime)s] %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
     handler.setFormatter(formatter)
 
@@ -57,6 +54,7 @@ def get_logger() -> logging.Logger:
     global _logger
     if _logger is None:
         setup_logging()
+    assert _logger is not None  # setup_logging() always sets _logger
     return _logger
 
 
@@ -70,7 +68,7 @@ def is_verbose() -> bool:
     return _verbose_enabled
 
 
-def log_api_request(method: str, url: str, params: Optional[dict] = None) -> None:
+def log_api_request(method: str, url: str, params: dict | None = None) -> None:
     """
     Log an API request.
 

@@ -20,13 +20,13 @@ class TestValidateDate:
 
     def test_invalid_date_format_raises_error(self):
         """Should raise ValidationError for invalid format."""
-        with pytest.raises(ValidationError, match="date.*YYYY-MM-DD"):
+        with pytest.raises(ValidationError, match=r"date.*YYYY-MM-DD"):
             validate_date("01/15/2025")
 
-        with pytest.raises(ValidationError, match="date.*YYYY-MM-DD"):
+        with pytest.raises(ValidationError, match=r"date.*YYYY-MM-DD"):
             validate_date("2025-1-15")
 
-        with pytest.raises(ValidationError, match="date.*YYYY-MM-DD"):
+        with pytest.raises(ValidationError, match=r"date.*YYYY-MM-DD"):
             validate_date("15-01-2025")
 
     def test_invalid_date_values_raises_error(self):

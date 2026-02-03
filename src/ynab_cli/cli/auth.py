@@ -5,14 +5,13 @@ Handles login/logout and credential management.
 """
 
 import asyncio
-import sys
 
 import httpx
 import typer
 
-from ..api.client import YNABClient
-from ..config import settings
-from ..error_handling import (
+from ynab_cli.api.client import YNABClient
+from ynab_cli.config import settings
+from ynab_cli.error_handling import (
     YNABAPIError,
     YNABAuthenticationError,
     YNABNetworkError,
@@ -29,14 +28,14 @@ def login(
         ...,
         prompt=True,
         hide_input=True,
-        help="YNAB API token from https://app.ynab.com/settings/developer"
+        help="YNAB API token from https://app.ynab.com/settings/developer",
     ),
     budget_id: str = typer.Option(
         "last-used",
         prompt="Budget ID (or 'last-used', 'default')",
-        help="Budget ID to use by default"
-    )
-):
+        help="Budget ID to use by default",
+    ),
+) -> None:
     """
     Configure YNAB API credentials.
 
@@ -65,9 +64,9 @@ def login(
             typer.secho(
                 "Error: Unable to retrieve user information from YNAB API",
                 fg=typer.colors.RED,
-                err=True
+                err=True,
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
         # Token is valid - save credentials
         settings.save_token(token, budget_id)
@@ -87,32 +86,32 @@ def login(
         typer.echo(f"Details: {e.message}", err=True)
         typer.echo("\nThe API token you provided is invalid or expired.")
         typer.echo("Get a new token from: https://app.ynab.com/settings/developer")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except YNABNetworkError as e:
         typer.secho("Network Error", fg=typer.colors.RED, err=True)
         typer.echo(f"Details: {e.message}", err=True)
         typer.echo("\nPlease check your internet connection and try again.")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except YNABAPIError as e:
         typer.secho("API Error", fg=typer.colors.RED, err=True)
         typer.echo(f"Details: {e.message}", err=True)
         if e.status_code:
             typer.echo(f"Status code: {e.status_code}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
         # Convert to specific YNAB error
         ynab_error = format_api_error(e)
         typer.secho("Error", fg=typer.colors.RED, err=True)
         typer.echo(f"Details: {ynab_error}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
         typer.secho("Unexpected Error", fg=typer.colors.RED, err=True)
-        typer.echo(f"Details: {str(e)}", err=True)
+        typer.echo(f"Details: {e!s}", err=True)
         typer.echo("\nPlease check:")
         typer.echo("  1. Token is correct (get it from https://app.ynab.com/settings/developer)")
         typer.echo("  2. You have internet connection")
         typer.echo("  3. YNAB API is accessible")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 async def validate_token(token: str) -> dict:

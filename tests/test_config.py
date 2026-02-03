@@ -1,12 +1,14 @@
 """
 Tests for configuration management (config.py).
 
-Tests config file at ~/.config/ynab/config.toml and environment variables.
+Tests configuration from multiple sources:
+- .env file loading and precedence
+- config.toml at ~/.config/ynab/config.toml
+- Environment variables
+- Priority order verification
 """
 
-import os
 from pathlib import Path
-from unittest.mock import Mock, patch
 
 import pytest
 
@@ -144,9 +146,11 @@ class TestSaveToken:
 
     def test_save_token_creates_directory_if_missing(self, tmp_path, monkeypatch, clean_env):
         """Test save_token creates config directory if it doesn't exist."""
+
         # Mock home to tmp_path but don't create the .config/ynab directory
         def mock_home():
             return tmp_path
+
         monkeypatch.setattr(Path, "home", mock_home)
 
         settings = Settings()
@@ -226,3 +230,112 @@ budget_id = "toml-budget"
         settings = Settings()
         assert settings.api_token == "only-token"
         assert settings.budget_id == "last-used"  # Should use default
+
+
+class TestDotEnvFile:
+    """Test .env file loading and precedence."""
+
+    def test_dotenv_loads_api_token(self, tmp_path, temp_config_dir, monkeypatch, clean_env):
+        """Test that .env file is loaded and provides API token."""
+        from dotenv import load_dotenv
+
+        # Change to temp directory
+        monkeypatch.chdir(tmp_path)
+
+        # Create .env file
+        env_file = tmp_path / ".env"
+        env_file.write_text("YNAB_API_TOKEN=dotenv-token-123\n")
+
+        # Explicitly load the .env file with override
+        load_dotenv(dotenv_path=env_file, override=True)
+
+        from ynab_cli.config import Settings
+
+        settings = Settings()
+        assert settings.api_token == "dotenv-token-123"
+
+    def test_dotenv_loads_budget_id(self, tmp_path, temp_config_dir, monkeypatch, clean_env):
+        """Test that .env file provides budget ID."""
+        from dotenv import load_dotenv
+
+        # Change to temp directory
+        monkeypatch.chdir(tmp_path)
+
+        # Create .env file
+        env_file = tmp_path / ".env"
+        env_file.write_text("YNAB_BUDGET_ID=dotenv-budget-456\n")
+
+        # Explicitly load the .env file with override
+        load_dotenv(dotenv_path=env_file, override=True)
+
+        from ynab_cli.config import Settings
+
+        settings = Settings()
+        assert settings.budget_id == "dotenv-budget-456"
+
+    def test_system_env_overrides_dotenv(self, tmp_path, temp_config_dir, monkeypatch, clean_env):
+        """Test that system environment variables take precedence over .env file."""
+        from dotenv import load_dotenv
+
+        # Change to temp directory
+        monkeypatch.chdir(tmp_path)
+
+        # Create .env file
+        env_file = tmp_path / ".env"
+        env_file.write_text("YNAB_API_TOKEN=dotenv-token\nYNAB_BUDGET_ID=dotenv-budget\n")
+
+        # Load .env file first
+        load_dotenv(dotenv_path=env_file, override=False)
+
+        # Set system environment variables (these should take precedence)
+        # With override=False, load_dotenv won't override existing env vars
+        monkeypatch.setenv("YNAB_API_TOKEN", "system-token")
+        monkeypatch.setenv("YNAB_BUDGET_ID", "system-budget")
+
+        from ynab_cli.config import Settings
+
+        settings = Settings()
+        assert settings.api_token == "system-token"
+        assert settings.budget_id == "system-budget"
+
+    def test_dotenv_overrides_config_file(self, tmp_path, temp_config_dir, monkeypatch, clean_env):
+        """Test that .env file takes precedence over config.toml."""
+        from dotenv import load_dotenv
+
+        # Change to temp directory
+        monkeypatch.chdir(tmp_path)
+
+        # Create config.toml with values
+        config_file = temp_config_dir / "config.toml"
+        config_file.write_text('api_token = "file-token"\nbudget_id = "file-budget"\n')
+
+        # Create .env file with different values
+        env_file = tmp_path / ".env"
+        env_file.write_text("YNAB_API_TOKEN=dotenv-token\nYNAB_BUDGET_ID=dotenv-budget\n")
+
+        # Load .env file
+        load_dotenv(dotenv_path=env_file, override=True)
+
+        from ynab_cli.config import Settings
+
+        settings = Settings()
+        # .env should override config file
+        assert settings.api_token == "dotenv-token"
+        assert settings.budget_id == "dotenv-budget"
+
+    def test_config_file_used_when_no_dotenv(
+        self, tmp_path, temp_config_dir, monkeypatch, clean_env
+    ):
+        """Test that config.toml is used when .env file doesn't exist."""
+        # Change to temp directory (no .env file created)
+        monkeypatch.chdir(tmp_path)
+
+        # Create config.toml
+        config_file = temp_config_dir / "config.toml"
+        config_file.write_text('api_token = "file-token"\nbudget_id = "file-budget"\n')
+
+        from ynab_cli.config import Settings
+
+        settings = Settings()
+        assert settings.api_token == "file-token"
+        assert settings.budget_id == "file-budget"

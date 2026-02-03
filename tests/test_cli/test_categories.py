@@ -4,7 +4,6 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from typer.testing import CliRunner
 
 from ynab_cli.cli.main import app
 
@@ -43,7 +42,7 @@ def mock_categories_response():
                             "goal_type": "MF",  # Monthly Funding
                             "goal_target": 150000,
                         },
-                    ]
+                    ],
                 },
                 {
                     "id": "group-2",
@@ -73,10 +72,10 @@ def mock_categories_response():
                             "goal_type": "TBD",  # Target by Date
                             "goal_target": 2000000,  # $2,000.00
                         },
-                    ]
+                    ],
                 },
             ],
-            "server_knowledge": 789
+            "server_knowledge": 789,
         }
     }
 
@@ -89,10 +88,13 @@ class TestCategoriesList:
         with patch("ynab_cli.cli.categories.settings", None):
             result = cli_runner.invoke(app, ["categories", "list"])
             assert result.exit_code != 0
-            assert "API token not configured" in result.stdout or "API token is required" in result.stdout
+            assert (
+                "API token not configured" in result.stdout
+                or "API token is required" in result.stdout
+            )
 
     def test_categories_list_basic(self, cli_runner, mock_categories_response):
-        """Test basic categories list command."""
+        """Test basic categories list command (default JSON output)."""
         mock_settings = MagicMock()
         mock_settings.api_token = "test-token"
         mock_settings.default_budget_id = "budget-1"
@@ -109,26 +111,18 @@ class TestCategoriesList:
                 result = cli_runner.invoke(app, ["categories", "list"])
 
                 assert result.exit_code == 0
-                # Check category group names
-                assert "Monthly Bills" in result.stdout
-                assert "Savings Goals" in result.stdout
 
-                # Check category names
-                assert "Rent/Mortgage" in result.stdout
-                assert "Electric" in result.stdout
-                assert "Emergency Fund" in result.stdout
-                assert "Vacation" in result.stdout
-
-                # Check amounts are formatted as dollars
-                assert "1,500.00" in result.stdout or "1500.00" in result.stdout
-                assert "150.00" in result.stdout
-                assert "5,000.00" in result.stdout or "5000.00" in result.stdout
+                # Verify output is valid JSON (default)
+                output_data = json.loads(result.stdout)
+                assert "category_groups" in output_data
+                assert len(output_data["category_groups"]) == 2
+                assert output_data["category_groups"][0]["name"] == "Monthly Bills"
 
                 # Verify client was called correctly
                 mock_client.get_categories.assert_called_once_with(budget_id=None)
 
-    def test_categories_list_json_output(self, cli_runner, mock_categories_response):
-        """Test categories list with JSON output."""
+    def test_categories_list_table_output(self, cli_runner, mock_categories_response):
+        """Test categories list with table output."""
         mock_settings = MagicMock()
         mock_settings.api_token = "test-token"
         mock_settings.default_budget_id = "budget-1"
@@ -142,16 +136,17 @@ class TestCategoriesList:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["categories", "list", "--json"])
+                result = cli_runner.invoke(app, ["categories", "list", "--table"])
 
                 assert result.exit_code == 0
 
-                # Verify output is valid JSON
-                output_data = json.loads(result.stdout)
-                assert "category_groups" in output_data
-                assert len(output_data["category_groups"]) == 2
-                assert output_data["category_groups"][0]["name"] == "Monthly Bills"
-                assert len(output_data["category_groups"][0]["categories"]) == 2
+                # Check category group names
+                assert "Monthly Bills" in result.stdout
+                assert "Savings Goals" in result.stdout
+
+                # Check category names
+                assert "Rent/Mortgage" in result.stdout
+                assert "Electric" in result.stdout
 
     def test_categories_list_with_budget_override(self, cli_runner, mock_categories_response):
         """Test categories list with --budget flag."""
@@ -189,7 +184,7 @@ class TestCategoriesList:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["categories", "list", "--show-goals"])
+                result = cli_runner.invoke(app, ["categories", "list", "--show-goals", "--table"])
 
                 assert result.exit_code == 0
                 # Should show goal types
@@ -212,7 +207,7 @@ class TestCategoriesList:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["categories", "list"])
+                result = cli_runner.invoke(app, ["categories", "list", "--table"])
 
                 assert result.exit_code == 0
                 # Groups should appear before their categories in output
@@ -225,7 +220,9 @@ class TestCategoriesList:
                 assert monthly_bills_pos < rent_pos
                 assert savings_goals_pos < emergency_pos
 
-    def test_categories_list_shows_budgeted_activity_balance(self, cli_runner, mock_categories_response):
+    def test_categories_list_shows_budgeted_activity_balance(
+        self, cli_runner, mock_categories_response
+    ):
         """Test that budgeted, activity, and balance are all displayed."""
         mock_settings = MagicMock()
         mock_settings.api_token = "test-token"
@@ -240,7 +237,7 @@ class TestCategoriesList:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = cli_runner.invoke(app, ["categories", "list"])
+                result = cli_runner.invoke(app, ["categories", "list", "--table"])
 
                 assert result.exit_code == 0
                 # Should show column headers or labels for budgeted/activity/balance
@@ -259,7 +256,9 @@ class TestCategoriesList:
         with patch("ynab_cli.cli.categories.settings", mock_settings):
             with patch("ynab_cli.cli.categories.YNABClient") as mock_client_class:
                 mock_client = AsyncMock()
-                mock_client.get_categories = AsyncMock(side_effect=Exception("API connection failed"))
+                mock_client.get_categories = AsyncMock(
+                    side_effect=Exception("API connection failed")
+                )
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client

@@ -6,14 +6,14 @@ Defines the Typer app and command groups for the ynab CLI tool.
 
 import typer
 
-from ..context import set_debug
-from ..logging_config import setup_logging
-from .accounts import accounts_app
-from .auth import login
-from .budgets import budgets_app
-from .categories import categories_app
-from .months import months_app
-from .transactions import transactions_app
+from ynab_cli.cli.accounts import accounts_app
+from ynab_cli.cli.auth import login
+from ynab_cli.cli.budgets import budgets_app
+from ynab_cli.cli.categories import categories_app
+from ynab_cli.cli.months import months_app
+from ynab_cli.cli.transactions import transactions_app
+from ynab_cli.context import set_debug
+from ynab_cli.logging_config import setup_logging
 
 app = typer.Typer(
     name="ynab",
@@ -32,10 +32,11 @@ app.add_typer(months_app, name="months")
 app.add_typer(transactions_app, name="transactions")
 
 
-def version_callback(value: bool):
+def version_callback(value: bool) -> None:
     """Show version and exit."""
     if value:
         from ynab_cli import __version__
+
         typer.echo(f"ynab-cli version {__version__}")
         raise typer.Exit()
 
@@ -59,8 +60,8 @@ def main(
         False,
         "--verbose",
         help="Enable verbose logging (API requests/responses)",
-    )
-):
+    ),
+) -> None:
     """
     YNAB CLI - Comprehensive Python CLI for the YNAB API.
 

@@ -57,9 +57,7 @@ class TestLoggingSetup:
 
         # Should not raise any exceptions
         log_api_request(
-            "GET",
-            "https://api.ynab.com/v1/budgets",
-            params={"include_accounts": "true"}
+            "GET", "https://api.ynab.com/v1/budgets", params={"include_accounts": "true"}
         )
 
         # Clean up
