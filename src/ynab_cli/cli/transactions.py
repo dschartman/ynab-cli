@@ -348,12 +348,7 @@ def update_transaction(
     category: str | None = typer.Option(
         None,
         "--category",
-        help="Category ID",
-    ),
-    clear_category: bool = typer.Option(
-        False,
-        "--clear-category",
-        help="Remove category from transaction (set to uncategorized)",
+        help='Category ID (use empty string "" to clear/uncategorize)',
     ),
     memo: str | None = typer.Option(
         None,
@@ -394,7 +389,7 @@ def update_transaction(
         ynab transactions update txn-123 --amount -30.00 --memo "Updated" --cleared
 
         # Clear category (set to uncategorized)
-        ynab transactions update txn-123 --clear-category
+        ynab transactions update txn-123 --category ""
     """
     # Check if token is configured
     if not settings or not settings.api_token:
@@ -414,10 +409,8 @@ def update_transaction(
             updates["amount"] = dollars_to_milliunits(amount)
         if payee:
             updates["payee_id"] = payee
-        if clear_category:
-            updates["category_id"] = None
-        elif category:
-            updates["category_id"] = category
+        if category is not None:
+            updates["category_id"] = category or None
         if memo:
             updates["memo"] = memo
         if cleared:
