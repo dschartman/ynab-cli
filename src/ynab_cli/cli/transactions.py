@@ -18,7 +18,7 @@ from ynab_cli.error_handling import (
     format_api_error,
     get_error_details,
 )
-from ynab_cli.utils import dollars_to_milliunits, milliunits_to_dollars
+from ynab_cli.utils import convert_monetary_fields, dollars_to_milliunits, milliunits_to_dollars
 
 transactions_app = typer.Typer(
     name="transactions",
@@ -121,8 +121,8 @@ def list_transactions(
             # Table output
             _print_transactions_table(transactions)
         else:
-            # JSON output (default)
-            output = {"transactions": transactions}
+            # JSON output (default) - convert milliunits to dollars
+            output = convert_monetary_fields({"transactions": transactions})
             console.print(json.dumps(output, indent=2))
 
     except Exception as e:
@@ -298,8 +298,9 @@ def create_transaction(
             console.print(f"Date: {created['date']}")
             console.print(f"Amount: ${milliunits_to_dollars(created['amount']):,.2f}")
         else:
-            # JSON output (default)
-            console.print(json.dumps({"transaction": created}, indent=2))
+            # JSON output (default) - convert milliunits to dollars
+            output = convert_monetary_fields({"transaction": created})
+            console.print(json.dumps(output, indent=2))
 
     except Exception as e:
         handle_cli_error(e)
@@ -431,8 +432,9 @@ def update_transaction(
             console.print("[green]✓ Transaction updated successfully[/green]")
             console.print(f"ID: {updated['id']}")
         else:
-            # JSON output (default)
-            console.print(json.dumps({"transaction": updated}, indent=2))
+            # JSON output (default) - convert milliunits to dollars
+            output = convert_monetary_fields({"transaction": updated})
+            console.print(json.dumps(output, indent=2))
 
     except Exception as e:
         handle_cli_error(e)

@@ -17,7 +17,7 @@ from ynab_cli.error_handling import (
     YNABNetworkError,
     format_api_error,
 )
-from ynab_cli.utils import milliunits_to_dollars
+from ynab_cli.utils import convert_monetary_fields, milliunits_to_dollars
 
 months_app = typer.Typer(
     name="months",
@@ -83,8 +83,9 @@ def get_month(
         if table_output:
             _print_month_summary(month_data)
         else:
-            # JSON output (default)
-            console.print(json.dumps({"month": month_data}, indent=2))
+            # JSON output (default) - convert milliunits to dollars
+            output = convert_monetary_fields({"month": month_data})
+            console.print(json.dumps(output, indent=2))
 
     except YNABAuthenticationError as e:
         console.print(f"[red]Authentication Error:[/red] {e.message}")

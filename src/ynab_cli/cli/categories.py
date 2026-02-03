@@ -17,7 +17,7 @@ from ynab_cli.error_handling import (
     YNABNetworkError,
     format_api_error,
 )
-from ynab_cli.utils import milliunits_to_dollars
+from ynab_cli.utils import convert_monetary_fields, milliunits_to_dollars
 
 categories_app = typer.Typer(
     name="categories",
@@ -80,8 +80,8 @@ def list_categories(
             # Table output with hierarchy
             _print_categories_grouped(category_groups, show_goals)
         else:
-            # JSON output (default)
-            output = {"category_groups": category_groups}
+            # JSON output (default) - convert milliunits to dollars
+            output = convert_monetary_fields({"category_groups": category_groups})
             console.print(json.dumps(output, indent=2))
 
     except YNABAuthenticationError as e:

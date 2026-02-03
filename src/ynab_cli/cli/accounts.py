@@ -17,7 +17,7 @@ from ynab_cli.error_handling import (
     YNABNetworkError,
     format_api_error,
 )
-from ynab_cli.utils import milliunits_to_dollars
+from ynab_cli.utils import convert_monetary_fields, milliunits_to_dollars
 
 accounts_app = typer.Typer(
     name="accounts",
@@ -65,8 +65,8 @@ def list_accounts(
             # Table output
             _print_accounts_table(accounts)
         else:
-            # JSON output (default)
-            output = {"accounts": accounts}
+            # JSON output (default) - convert milliunits to dollars
+            output = convert_monetary_fields({"accounts": accounts})
             console.print(json.dumps(output, indent=2))
 
     except YNABAuthenticationError as e:
