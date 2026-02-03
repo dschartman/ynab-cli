@@ -2,7 +2,6 @@
 
 from typing import Any
 
-
 # Fields that contain monetary values in milliunits
 MONETARY_FIELDS = {
     "balance",

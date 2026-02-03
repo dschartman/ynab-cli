@@ -336,7 +336,7 @@ class TestTransactionsCreate:
                 # Verify JSON output
                 output = json.loads(result.stdout)
                 assert output["transaction"]["id"] == "new-txn-123"
-                assert output["transaction"]["amount"] == -12450
+                assert output["transaction"]["amount"] == -12.45
                 # Verify API was called with milliunits
                 call_args = mock_client.create_transaction.call_args
                 assert call_args[1]["transaction"]["amount"] == -12450
@@ -599,7 +599,7 @@ class TestTransactionsCreate:
                 # Verify JSON output
                 output = json.loads(result.stdout)
                 assert output["transaction"]["id"] == "income-txn"
-                assert output["transaction"]["amount"] == 100000
+                assert output["transaction"]["amount"] == 100.0
                 # Verify API call
                 call_args = mock_client.create_transaction.call_args
                 assert call_args[1]["transaction"]["amount"] == 100000
@@ -675,7 +675,7 @@ class TestTransactionsUpdate:
                 # Verify JSON output
                 output = json.loads(result.stdout)
                 assert output["transaction"]["id"] == "txn-123"
-                assert output["transaction"]["amount"] == -20000
+                assert output["transaction"]["amount"] == -20.0
                 # Verify amount was converted to milliunits
                 call_kwargs = mock_client.update_transaction.call_args[1]
                 assert call_kwargs["amount"] == -20000
@@ -723,7 +723,7 @@ class TestTransactionsUpdate:
                 # Verify JSON output
                 output = json.loads(result.stdout)
                 assert output["transaction"]["id"] == "txn-456"
-                assert output["transaction"]["amount"] == -15000
+                assert output["transaction"]["amount"] == -15.0
                 assert output["transaction"]["memo"] == "Updated memo"
                 # Verify API was called correctly
                 call_kwargs = mock_client.update_transaction.call_args[1]
