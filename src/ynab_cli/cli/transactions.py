@@ -74,12 +74,12 @@ def list_transactions(
     transaction_type: str | None = typer.Option(
         None,
         "--type",
-        help="Filter by type",
+        help="Filter by type: 'unapproved', 'uncategorized', or 'unapproved,uncategorized'",
     ),
     limit: int | None = typer.Option(
         None,
         "--limit",
-        help="Maximum number of transactions to show",
+        help="Maximum number of transactions to show (client-side filter, use --since-date to limit API fetch)",
     ),
     table_output: bool = typer.Option(
         False,

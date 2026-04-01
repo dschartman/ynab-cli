@@ -11,6 +11,7 @@ from ynab_cli.cli.auth import login
 from ynab_cli.cli.budgets import budgets_app
 from ynab_cli.cli.categories import categories_app
 from ynab_cli.cli.months import months_app
+from ynab_cli.cli.payees import payees_app
 from ynab_cli.cli.transactions import transactions_app
 from ynab_cli.context import set_debug
 from ynab_cli.logging_config import setup_logging
@@ -29,6 +30,7 @@ app.add_typer(accounts_app, name="accounts")
 app.add_typer(budgets_app, name="budgets")
 app.add_typer(categories_app, name="categories")
 app.add_typer(months_app, name="months")
+app.add_typer(payees_app, name="payees")
 app.add_typer(transactions_app, name="transactions")
 
 
