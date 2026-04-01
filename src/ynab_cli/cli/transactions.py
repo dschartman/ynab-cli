@@ -123,7 +123,7 @@ def list_transactions(
         else:
             # JSON output (default) - convert milliunits to dollars
             output = convert_monetary_fields({"transactions": transactions})
-            console.print(json.dumps(output, indent=2))
+            print(json.dumps(output, indent=2))
 
     except Exception as e:
         handle_cli_error(e)
@@ -300,7 +300,7 @@ def create_transaction(
         else:
             # JSON output (default) - convert milliunits to dollars
             output = convert_monetary_fields({"transaction": created})
-            console.print(json.dumps(output, indent=2))
+            print(json.dumps(output, indent=2))
 
     except Exception as e:
         handle_cli_error(e)
@@ -437,7 +437,7 @@ def update_transaction(
         else:
             # JSON output (default) - convert milliunits to dollars
             output = convert_monetary_fields({"transaction": updated})
-            console.print(json.dumps(output, indent=2))
+            print(json.dumps(output, indent=2))
 
     except Exception as e:
         handle_cli_error(e)

@@ -67,7 +67,7 @@ def list_accounts(
         else:
             # JSON output (default) - convert milliunits to dollars
             output = convert_monetary_fields({"accounts": accounts})
-            console.print(json.dumps(output, indent=2))
+            print(json.dumps(output, indent=2))
 
     except YNABAuthenticationError as e:
         console.print(f"[red]Authentication Error:[/red] {e.message}")

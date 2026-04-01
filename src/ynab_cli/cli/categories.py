@@ -82,7 +82,7 @@ def list_categories(
         else:
             # JSON output (default) - convert milliunits to dollars
             output = convert_monetary_fields({"category_groups": category_groups})
-            console.print(json.dumps(output, indent=2))
+            print(json.dumps(output, indent=2))
 
     except YNABAuthenticationError as e:
         console.print(f"[red]Authentication Error:[/red] {e.message}")
@@ -179,7 +179,7 @@ def budget_category(
             console.print(f"Balance: ${milliunits_to_dollars(updated.get('balance', 0)):,.2f}")
         else:
             output = convert_monetary_fields({"category": updated})
-            console.print(json.dumps(output, indent=2))
+            print(json.dumps(output, indent=2))
 
     except YNABAuthenticationError as e:
         console.print(f"[red]Authentication Error:[/red] {e.message}")
