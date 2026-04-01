@@ -17,7 +17,12 @@ from ynab_cli.error_handling import (
     YNABNetworkError,
     format_api_error,
 )
-from ynab_cli.utils import convert_monetary_fields, dollars_to_milliunits, milliunits_to_dollars
+from ynab_cli.utils import (
+    GOAL_TYPE_NAMES,
+    convert_monetary_fields,
+    dollars_to_milliunits,
+    milliunits_to_dollars,
+)
 
 categories_app = typer.Typer(
     name="categories",
@@ -26,16 +31,6 @@ categories_app = typer.Typer(
 )
 
 console = Console()
-
-
-# Goal type display names
-GOAL_TYPE_NAMES = {
-    "MF": "Monthly Funding",
-    "NEED": "Plan Your Spending",
-    "TBD": "Target by Date",
-    "TB": "Target Balance",
-    "DEBT": "Debt Payoff",
-}
 
 
 @categories_app.command("list")

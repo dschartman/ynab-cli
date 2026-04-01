@@ -6,6 +6,15 @@ from typing import Any
 # Control characters that are invalid in JSON (except \t, \n, \r which json.dumps handles)
 _INVALID_JSON_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
+# Goal type display names
+GOAL_TYPE_NAMES: dict[str, str] = {
+    "MF": "Monthly Funding",
+    "NEED": "Plan Your Spending",
+    "TBD": "Target by Date",
+    "TB": "Target Balance",
+    "DEBT": "Debt Payoff",
+}
+
 # Fields that contain monetary values in milliunits
 MONETARY_FIELDS = {
     "balance",
@@ -86,12 +95,16 @@ def convert_monetary_fields(data: Any) -> Any:
         Data with monetary fields converted and strings sanitized
     """
     if isinstance(data, dict):
-        result = {}
+        result: dict[str, Any] = {}
         for key, value in data.items():
             if key in MONETARY_FIELDS and isinstance(value, int):
                 result[key] = milliunits_to_dollars(value)
             else:
                 result[key] = convert_monetary_fields(value)
+        # Enrich goal_type with human-readable name
+        goal_type = data.get("goal_type")
+        if isinstance(goal_type, str) and goal_type in GOAL_TYPE_NAMES:
+            result["goal_type_name"] = GOAL_TYPE_NAMES[goal_type]
         return result
     elif isinstance(data, list):
         return [convert_monetary_fields(item) for item in data]

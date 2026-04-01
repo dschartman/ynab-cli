@@ -93,3 +93,59 @@ class TestConvertMonetaryFieldsSanitization:
         assert result["budgeted"] == 250.0
         assert result["activity"] == -100.0
         assert result["name"] == "Test"
+
+
+class TestGoalTypeNameEnrichment:
+    """Tests for goal_type_name enrichment in convert_monetary_fields."""
+
+    def test_adds_goal_type_name_for_known_types(self):
+        """Known goal types get a human-readable name added."""
+        data = {"goal_type": "MF", "name": "Electric"}
+        result = convert_monetary_fields(data)
+        assert result["goal_type"] == "MF"
+        assert result["goal_type_name"] == "Monthly Funding"
+
+    def test_all_known_goal_types(self):
+        """All known goal types are mapped."""
+        expected = {
+            "MF": "Monthly Funding",
+            "NEED": "Plan Your Spending",
+            "TBD": "Target by Date",
+            "TB": "Target Balance",
+            "DEBT": "Debt Payoff",
+        }
+        for code, name in expected.items():
+            result = convert_monetary_fields({"goal_type": code})
+            assert result["goal_type_name"] == name
+
+    def test_no_goal_type_name_for_none(self):
+        """No goal_type_name added when goal_type is None."""
+        data = {"goal_type": None, "name": "Test"}
+        result = convert_monetary_fields(data)
+        assert "goal_type_name" not in result
+
+    def test_no_goal_type_name_for_unknown_code(self):
+        """No goal_type_name added for unrecognized codes."""
+        data = {"goal_type": "UNKNOWN"}
+        result = convert_monetary_fields(data)
+        assert "goal_type_name" not in result
+
+    def test_no_goal_type_name_when_no_goal_type_field(self):
+        """No goal_type_name added when goal_type field is absent."""
+        data = {"name": "Test", "budgeted": 100000}
+        result = convert_monetary_fields(data)
+        assert "goal_type_name" not in result
+
+    def test_nested_categories_get_goal_type_name(self):
+        """goal_type_name is added to nested category dicts."""
+        data = {
+            "categories": [
+                {"name": "Electric", "goal_type": "MF", "budgeted": 150000},
+                {"name": "Vacation", "goal_type": "TBD", "budgeted": 200000},
+                {"name": "No Goal", "goal_type": None, "budgeted": 0},
+            ]
+        }
+        result = convert_monetary_fields(data)
+        assert result["categories"][0]["goal_type_name"] == "Monthly Funding"
+        assert result["categories"][1]["goal_type_name"] == "Target by Date"
+        assert "goal_type_name" not in result["categories"][2]
