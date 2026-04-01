@@ -1,6 +1,10 @@
 """Utility functions for YNAB CLI."""
 
+import re
 from typing import Any
+
+# Control characters that are invalid in JSON (except \t, \n, \r which json.dumps handles)
+_INVALID_JSON_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 # Fields that contain monetary values in milliunits
 MONETARY_FIELDS = {
@@ -50,18 +54,36 @@ def dollars_to_milliunits(amount: float) -> int:
     return int(amount * 1000)
 
 
+def sanitize_string(value: str) -> str:
+    """
+    Remove invalid JSON control characters from a string.
+
+    The YNAB API can return strings (e.g., category notes) containing raw control
+    characters that produce invalid JSON when serialized. This replaces problematic
+    control characters while preserving tabs, newlines, and carriage returns which
+    json.dumps() handles correctly via escaping.
+
+    Args:
+        value: String potentially containing control characters
+
+    Returns:
+        Sanitized string safe for JSON serialization
+    """
+    return _INVALID_JSON_CONTROL_RE.sub("", value)
+
+
 def convert_monetary_fields(data: Any) -> Any:
     """
-    Recursively convert monetary fields from milliunits to dollars.
+    Recursively process API response data for JSON output.
 
-    Traverses dicts and lists, converting any field in MONETARY_FIELDS
-    from milliunits (int) to dollars (float).
+    - Converts monetary fields from milliunits (int) to dollars (float)
+    - Sanitizes strings to remove invalid JSON control characters
 
     Args:
         data: API response data (dict, list, or primitive)
 
     Returns:
-        Data with monetary fields converted to dollars
+        Data with monetary fields converted and strings sanitized
     """
     if isinstance(data, dict):
         result = {}
@@ -73,5 +95,7 @@ def convert_monetary_fields(data: Any) -> Any:
         return result
     elif isinstance(data, list):
         return [convert_monetary_fields(item) for item in data]
+    elif isinstance(data, str):
+        return sanitize_string(value=data)
     else:
         return data

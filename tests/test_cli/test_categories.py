@@ -9,6 +9,27 @@ from ynab_cli.cli.main import app
 
 
 @pytest.fixture
+def mock_budget_category_response():
+    """Mock response from YNAB API for category month update."""
+    return {
+        "data": {
+            "category": {
+                "id": "cat-1",
+                "name": "Rent/Mortgage",
+                "budgeted": 250000,  # $250.00
+                "activity": -100000,
+                "balance": 150000,
+                "hidden": False,
+                "deleted": False,
+                "goal_type": None,
+                "goal_target": None,
+                "note": None,
+            }
+        }
+    }
+
+
+@pytest.fixture
 def mock_categories_response():
     """Mock response from YNAB API for categories list."""
     return {
@@ -267,3 +288,204 @@ class TestCategoriesList:
 
                 assert result.exit_code != 0
                 assert "Error" in result.stdout or "Failed" in result.stdout
+
+
+class TestCategoriesBudget:
+    """Tests for 'ynab categories budget' command."""
+
+    def test_budget_requires_api_token(self, cli_runner, clean_env):
+        """Test that categories budget fails without API token configured."""
+        with patch("ynab_cli.cli.categories.settings", None):
+            result = cli_runner.invoke(
+                app, ["categories", "budget", "cat-1", "--month", "2026-04-01", "--amount", "250"]
+            )
+            assert result.exit_code != 0
+            assert (
+                "API token not configured" in result.stdout
+                or "API token is required" in result.stdout
+            )
+
+    def test_budget_basic_json_output(self, cli_runner, mock_budget_category_response):
+        """Test basic categories budget command returns JSON with updated category."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        with patch("ynab_cli.cli.categories.settings", mock_settings):
+            with patch("ynab_cli.cli.categories.YNABClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.update_category_month = AsyncMock(
+                    return_value=mock_budget_category_response
+                )
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                result = cli_runner.invoke(
+                    app,
+                    [
+                        "categories",
+                        "budget",
+                        "cat-1",
+                        "--month",
+                        "2026-04-01",
+                        "--amount",
+                        "250.00",
+                    ],
+                )
+
+                assert result.exit_code == 0
+                output_data = json.loads(result.stdout)
+                assert "category" in output_data
+                assert output_data["category"]["name"] == "Rent/Mortgage"
+                # Verify milliunit conversion: 250000 -> 250.0
+                assert output_data["category"]["budgeted"] == 250.0
+
+                # Verify API called with correct args (amount in milliunits)
+                mock_client.update_category_month.assert_called_once_with(
+                    category_id="cat-1",
+                    month="2026-04-01",
+                    budget_id=None,
+                    budgeted=250000,
+                )
+
+    def test_budget_table_output(self, cli_runner, mock_budget_category_response):
+        """Test categories budget with --table flag."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        with patch("ynab_cli.cli.categories.settings", mock_settings):
+            with patch("ynab_cli.cli.categories.YNABClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.update_category_month = AsyncMock(
+                    return_value=mock_budget_category_response
+                )
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                result = cli_runner.invoke(
+                    app,
+                    [
+                        "categories",
+                        "budget",
+                        "cat-1",
+                        "--month",
+                        "2026-04-01",
+                        "--amount",
+                        "250.00",
+                        "--table",
+                    ],
+                )
+
+                assert result.exit_code == 0
+                assert "Category budget updated successfully" in result.stdout
+                assert "Rent/Mortgage" in result.stdout
+
+    def test_budget_with_budget_override(self, cli_runner, mock_budget_category_response):
+        """Test categories budget with --budget flag."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        with patch("ynab_cli.cli.categories.settings", mock_settings):
+            with patch("ynab_cli.cli.categories.YNABClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.update_category_month = AsyncMock(
+                    return_value=mock_budget_category_response
+                )
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                result = cli_runner.invoke(
+                    app,
+                    [
+                        "categories",
+                        "budget",
+                        "cat-1",
+                        "--month",
+                        "2026-04-01",
+                        "--amount",
+                        "100",
+                        "--budget",
+                        "budget-2",
+                    ],
+                )
+
+                assert result.exit_code == 0
+                mock_client.update_category_month.assert_called_once_with(
+                    category_id="cat-1",
+                    month="2026-04-01",
+                    budget_id="budget-2",
+                    budgeted=100000,
+                )
+
+    def test_budget_zero_amount(self, cli_runner, mock_budget_category_response):
+        """Test assigning $0 to clear a category's budget."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        # Adjust mock to reflect zero budget
+        mock_budget_category_response["data"]["category"]["budgeted"] = 0
+        mock_budget_category_response["data"]["category"]["balance"] = -100000
+
+        with patch("ynab_cli.cli.categories.settings", mock_settings):
+            with patch("ynab_cli.cli.categories.YNABClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.update_category_month = AsyncMock(
+                    return_value=mock_budget_category_response
+                )
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                result = cli_runner.invoke(
+                    app,
+                    [
+                        "categories",
+                        "budget",
+                        "cat-1",
+                        "--month",
+                        "2026-04-01",
+                        "--amount",
+                        "0",
+                    ],
+                )
+
+                assert result.exit_code == 0
+                mock_client.update_category_month.assert_called_once_with(
+                    category_id="cat-1",
+                    month="2026-04-01",
+                    budget_id=None,
+                    budgeted=0,
+                )
+
+    def test_budget_api_error(self, cli_runner):
+        """Test categories budget handles API errors gracefully."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        with patch("ynab_cli.cli.categories.settings", mock_settings):
+            with patch("ynab_cli.cli.categories.YNABClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.update_category_month = AsyncMock(
+                    side_effect=Exception("API connection failed")
+                )
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                result = cli_runner.invoke(
+                    app,
+                    [
+                        "categories",
+                        "budget",
+                        "cat-1",
+                        "--month",
+                        "2026-04-01",
+                        "--amount",
+                        "250",
+                    ],
+                )
+
+                assert result.exit_code != 0
+                assert "Error" in result.stdout

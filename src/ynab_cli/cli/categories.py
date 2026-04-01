@@ -17,7 +17,7 @@ from ynab_cli.error_handling import (
     YNABNetworkError,
     format_api_error,
 )
-from ynab_cli.utils import convert_monetary_fields, milliunits_to_dollars
+from ynab_cli.utils import convert_monetary_fields, dollars_to_milliunits, milliunits_to_dollars
 
 categories_app = typer.Typer(
     name="categories",
@@ -110,6 +110,112 @@ async def _list_categories_async(budget_id: str | None) -> dict[str, Any]:
     """Async helper to fetch categories."""
     async with YNABClient() as client:
         return await client.get_categories(budget_id=budget_id)
+
+
+@categories_app.command("budget")
+def budget_category(
+    category_id: str = typer.Argument(
+        ...,
+        help="Category ID to assign budget amount",
+    ),
+    month: str = typer.Option(
+        ...,
+        "--month",
+        help="Month in YYYY-MM-01 format (e.g., 2026-04-01)",
+    ),
+    amount: float = typer.Option(
+        ...,
+        "--amount",
+        help="Amount to assign in dollars (e.g., 250.00)",
+    ),
+    budget: str | None = typer.Option(
+        None,
+        "--budget",
+        help="Budget ID (overrides default)",
+    ),
+    table_output: bool = typer.Option(
+        False,
+        "--table",
+        help="Output as table (default is JSON)",
+    ),
+) -> None:
+    """
+    Set the budgeted amount for a category in a specific month.
+
+    Assigns money to a category for a given month. The amount is in dollars
+    and will be converted to milliunits for the API.
+
+    Examples:
+        # Assign $250 to a category for April 2026
+        ynab categories budget cat-123 --month 2026-04-01 --amount 250.00
+
+        # Assign $0 to clear a category's budget
+        ynab categories budget cat-123 --month 2026-04-01 --amount 0
+    """
+    if not settings or not settings.api_token:
+        console.print("[red]Error: API token not configured[/red]")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1) from None
+
+    try:
+        amount_milliunits = dollars_to_milliunits(amount)
+
+        response = asyncio.run(
+            _budget_category_async(
+                category_id=category_id,
+                month=month,
+                budgeted=amount_milliunits,
+                budget_id=budget,
+            )
+        )
+
+        updated = response["data"]["category"]
+
+        if table_output:
+            console.print("[green]✓ Category budget updated successfully[/green]")
+            console.print(f"Category: {updated.get('name', category_id)}")
+            console.print(f"Month: {month}")
+            console.print(f"Budgeted: ${milliunits_to_dollars(updated.get('budgeted', 0)):,.2f}")
+            console.print(f"Balance: ${milliunits_to_dollars(updated.get('balance', 0)):,.2f}")
+        else:
+            output = convert_monetary_fields({"category": updated})
+            console.print(json.dumps(output, indent=2))
+
+    except YNABAuthenticationError as e:
+        console.print(f"[red]Authentication Error:[/red] {e.message}")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1) from None
+    except YNABNetworkError as e:
+        console.print(f"[red]Network Error:[/red] {e.message}")
+        raise typer.Exit(1) from None
+    except YNABAPIError as e:
+        console.print(f"[red]API Error:[/red] {e.message}")
+        if e.status_code:
+            console.print(f"Status code: {e.status_code}")
+        raise typer.Exit(1) from None
+    except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
+        ynab_error = format_api_error(e)
+        console.print(f"[red]Error:[/red] {ynab_error}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Unexpected Error:[/red] {e!s}")
+        raise typer.Exit(1) from None
+
+
+async def _budget_category_async(
+    category_id: str,
+    month: str,
+    budgeted: int,
+    budget_id: str | None,
+) -> dict[str, Any]:
+    """Async helper to update category budgeted amount for a month."""
+    async with YNABClient() as client:
+        return await client.update_category_month(
+            category_id=category_id,
+            month=month,
+            budget_id=budget_id,
+            budgeted=budgeted,
+        )
 
 
 def _print_categories_grouped(category_groups: list, show_goals: bool) -> None:
