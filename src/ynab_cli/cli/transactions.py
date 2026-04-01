@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ynab_cli.api.client import YNABClient
+from ynab_cli.cli.resolve import resolve_category_name, resolve_payee_name
 from ynab_cli.config import settings
 from ynab_cli.error_handling import (
     YNABAPIError,
@@ -205,10 +206,20 @@ def create_transaction(
         "--payee",
         help="Payee ID",
     ),
+    payee_name: str | None = typer.Option(
+        None,
+        "--payee-name",
+        help="Payee name (resolved to ID, alternative to --payee)",
+    ),
     category: str | None = typer.Option(
         None,
         "--category",
         help="Category ID",
+    ),
+    category_name: str | None = typer.Option(
+        None,
+        "--category-name",
+        help="Category name (resolved to ID, alternative to --category)",
     ),
     memo: str | None = typer.Option(
         None,
@@ -242,9 +253,15 @@ def create_transaction(
     Amounts should be in dollars (negative for expenses, positive for income).
     The CLI will automatically convert to milliunits for the API.
 
+    Use --payee-name or --category-name to look up by name instead of ID.
+
     Examples:
         # Create an expense
         ynab transactions create --account acct-123 --date 2024-01-15 --amount -12.45
+
+        # Create with names instead of IDs
+        ynab transactions create --account acct-123 --date 2024-01-20 \\
+            --amount -12.45 --payee-name "Amazon" --category-name "Groceries"
 
         # Create income with all fields
         ynab transactions create --account acct-123 --date 2024-01-20 \\
@@ -258,6 +275,19 @@ def create_transaction(
         raise typer.Exit(1) from None
 
     try:
+        # Resolve names to IDs
+        if payee_name:
+            if payee:
+                console.print("[red]Error: Cannot use both --payee and --payee-name[/red]")
+                raise typer.Exit(1) from None
+            payee = resolve_payee_name(payee_name, budget_id=budget)
+
+        if category_name:
+            if category:
+                console.print("[red]Error: Cannot use both --category and --category-name[/red]")
+                raise typer.Exit(1) from None
+            category = resolve_category_name(category_name, budget_id=budget)
+
         # Convert amount to milliunits
         amount_milliunits = dollars_to_milliunits(amount)
 
@@ -345,10 +375,20 @@ def update_transaction(
         "--payee",
         help="Payee ID",
     ),
+    payee_name: str | None = typer.Option(
+        None,
+        "--payee-name",
+        help="Payee name (resolved to ID, alternative to --payee)",
+    ),
     category: str | None = typer.Option(
         None,
         "--category",
         help='Category ID (use empty string "" to clear/uncategorize)',
+    ),
+    category_name: str | None = typer.Option(
+        None,
+        "--category-name",
+        help="Category name (resolved to ID, alternative to --category)",
     ),
     memo: str | None = typer.Option(
         None,
@@ -380,10 +420,14 @@ def update_transaction(
     Update an existing transaction.
 
     Provide only the fields you want to update. Fields not specified will remain unchanged.
+    Use --payee-name or --category-name to look up by name instead of ID.
 
     Examples:
         # Update amount
         ynab transactions update txn-123 --amount -25.00
+
+        # Recategorize by name
+        ynab transactions update txn-123 --category-name "Groceries" --approved
 
         # Update multiple fields
         ynab transactions update txn-123 --amount -30.00 --memo "Updated" --cleared
@@ -398,6 +442,19 @@ def update_transaction(
         raise typer.Exit(1) from None
 
     try:
+        # Resolve names to IDs
+        if payee_name:
+            if payee:
+                console.print("[red]Error: Cannot use both --payee and --payee-name[/red]")
+                raise typer.Exit(1) from None
+            payee = resolve_payee_name(payee_name, budget_id=budget)
+
+        if category_name:
+            if category:
+                console.print("[red]Error: Cannot use both --category and --category-name[/red]")
+                raise typer.Exit(1) from None
+            category = resolve_category_name(category_name, budget_id=budget)
+
         # Build updates object
         updates: dict[str, Any] = {}
 

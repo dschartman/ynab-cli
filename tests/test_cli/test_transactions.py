@@ -1046,3 +1046,222 @@ class TestTransactionsTransfer:
 
             assert result.exit_code != 0
             assert "token" in result.stdout.lower() or "login" in result.stdout.lower()
+
+
+class TestTransactionNameResolution:
+    """Tests for --category-name and --payee-name on transaction commands."""
+
+    @pytest.fixture
+    def mock_create_response(self):
+        return {
+            "data": {
+                "transaction": {
+                    "id": "txn-new",
+                    "date": "2024-01-15",
+                    "amount": -12450,
+                    "payee_id": "payee-1",
+                    "category_id": "cat-1",
+                    "approved": False,
+                    "cleared": "uncleared",
+                }
+            }
+        }
+
+    @pytest.fixture
+    def mock_update_response(self):
+        return {
+            "data": {
+                "transaction": {
+                    "id": "txn-1",
+                    "date": "2024-01-15",
+                    "amount": -12450,
+                    "payee_id": "payee-1",
+                    "category_id": "cat-1",
+                    "approved": True,
+                    "cleared": "cleared",
+                }
+            }
+        }
+
+    def test_create_with_category_name(self, cli_runner, mock_create_response):
+        """Test transactions create with --category-name."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        with (
+            patch("ynab_cli.cli.transactions.settings", mock_settings),
+            patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class,
+            patch(
+                "ynab_cli.cli.transactions.resolve_category_name", return_value="cat-1"
+            ) as mock_resolve,
+        ):
+            mock_client = AsyncMock()
+            mock_client.create_transaction = AsyncMock(return_value=mock_create_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = cli_runner.invoke(
+                app,
+                [
+                    "transactions",
+                    "create",
+                    "--account",
+                    "acct-1",
+                    "--date",
+                    "2024-01-15",
+                    "--amount",
+                    "-12.45",
+                    "--category-name",
+                    "Groceries",
+                ],
+            )
+
+            assert result.exit_code == 0
+            mock_resolve.assert_called_once_with("Groceries", budget_id=None)
+
+    def test_create_with_payee_name(self, cli_runner, mock_create_response):
+        """Test transactions create with --payee-name."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        with (
+            patch("ynab_cli.cli.transactions.settings", mock_settings),
+            patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class,
+            patch(
+                "ynab_cli.cli.transactions.resolve_payee_name", return_value="payee-1"
+            ) as mock_resolve,
+        ):
+            mock_client = AsyncMock()
+            mock_client.create_transaction = AsyncMock(return_value=mock_create_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = cli_runner.invoke(
+                app,
+                [
+                    "transactions",
+                    "create",
+                    "--account",
+                    "acct-1",
+                    "--date",
+                    "2024-01-15",
+                    "--amount",
+                    "-12.45",
+                    "--payee-name",
+                    "Amazon",
+                ],
+            )
+
+            assert result.exit_code == 0
+            mock_resolve.assert_called_once_with("Amazon", budget_id=None)
+
+    def test_create_rejects_both_category_and_category_name(self, cli_runner):
+        """Test that --category and --category-name together is an error."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            result = cli_runner.invoke(
+                app,
+                [
+                    "transactions",
+                    "create",
+                    "--account",
+                    "acct-1",
+                    "--date",
+                    "2024-01-15",
+                    "--amount",
+                    "-12.45",
+                    "--category",
+                    "cat-1",
+                    "--category-name",
+                    "Groceries",
+                ],
+            )
+
+            assert result.exit_code != 0
+            assert "Cannot use both" in result.stdout
+
+    def test_create_rejects_both_payee_and_payee_name(self, cli_runner):
+        """Test that --payee and --payee-name together is an error."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            result = cli_runner.invoke(
+                app,
+                [
+                    "transactions",
+                    "create",
+                    "--account",
+                    "acct-1",
+                    "--date",
+                    "2024-01-15",
+                    "--amount",
+                    "-12.45",
+                    "--payee",
+                    "payee-1",
+                    "--payee-name",
+                    "Amazon",
+                ],
+            )
+
+            assert result.exit_code != 0
+            assert "Cannot use both" in result.stdout
+
+    def test_update_with_category_name(self, cli_runner, mock_update_response):
+        """Test transactions update with --category-name."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        with (
+            patch("ynab_cli.cli.transactions.settings", mock_settings),
+            patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class,
+            patch(
+                "ynab_cli.cli.transactions.resolve_category_name", return_value="cat-1"
+            ) as mock_resolve,
+        ):
+            mock_client = AsyncMock()
+            mock_client.update_transaction = AsyncMock(return_value=mock_update_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = cli_runner.invoke(
+                app,
+                [
+                    "transactions",
+                    "update",
+                    "txn-1",
+                    "--category-name",
+                    "Groceries",
+                    "--approved",
+                ],
+            )
+
+            assert result.exit_code == 0
+            mock_resolve.assert_called_once_with("Groceries", budget_id=None)
+
+    def test_update_rejects_both_category_and_category_name(self, cli_runner):
+        """Test that --category and --category-name together is an error on update."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            result = cli_runner.invoke(
+                app,
+                [
+                    "transactions",
+                    "update",
+                    "txn-1",
+                    "--category",
+                    "cat-1",
+                    "--category-name",
+                    "Groceries",
+                ],
+            )
+
+            assert result.exit_code != 0
+            assert "Cannot use both" in result.stdout
