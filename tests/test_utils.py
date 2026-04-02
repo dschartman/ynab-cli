@@ -12,17 +12,37 @@ class TestSanitizeString:
         """Clean strings pass through unmodified."""
         assert sanitize_string("Hello world") == "Hello world"
 
-    def test_preserves_newlines(self):
-        """Newlines are preserved (json.dumps handles them)."""
-        assert sanitize_string("line1\nline2") == "line1\nline2"
+    def test_removes_newlines(self):
+        """Newlines are removed so they never appear raw in JSON string values."""
+        assert sanitize_string("line1\nline2") == "line1line2"
 
-    def test_preserves_tabs(self):
-        """Tabs are preserved (json.dumps handles them)."""
-        assert sanitize_string("col1\tcol2") == "col1\tcol2"
+    def test_removes_tabs(self):
+        """Tabs are removed so they never appear raw in JSON string values."""
+        assert sanitize_string("col1\tcol2") == "col1col2"
 
-    def test_preserves_carriage_returns(self):
-        """Carriage returns are preserved (json.dumps handles them)."""
-        assert sanitize_string("line1\r\nline2") == "line1\r\nline2"
+    def test_removes_carriage_returns(self):
+        """Carriage returns are removed so they never appear raw in JSON string values."""
+        assert sanitize_string("line1\r\nline2") == "line1line2"
+
+    def test_removes_all_control_chars_including_whitespace_controls(self):
+        """All control characters 0x00-0x1f are removed, including \\t, \\n, \\r."""
+        # Build a string with every control character in range 0x00-0x1f
+        all_controls = "".join(chr(i) for i in range(0x20))
+        result = sanitize_string(f"a{all_controls}b")
+        assert result == "ab"
+
+    def test_json_output_is_valid_when_note_has_raw_newlines(self):
+        """Strings with raw newlines produce valid JSON when serialized."""
+        import json
+
+        # Raw newline inside a JSON string literal is invalid per the JSON spec.
+        # sanitize_string must remove it so json.dumps output is always valid.
+        note_with_raw_newline = "budget note\nwith a newline"
+        cleaned = sanitize_string(note_with_raw_newline)
+        json_str = json.dumps({"note": cleaned})
+        # Confirm the JSON is parse-able and the value contains no raw newline
+        parsed = json.loads(json_str)
+        assert "\n" not in parsed["note"]
 
     def test_removes_null_bytes(self):
         """Null bytes are removed."""
@@ -71,7 +91,8 @@ class TestConvertMonetaryFieldsSanitization:
         data = {"categories": [{"name": "test\x00cat", "note": "line1\nline2\x0bextra"}]}
         result = convert_monetary_fields(data)
         assert result["categories"][0]["name"] == "testcat"
-        assert result["categories"][0]["note"] == "line1\nline2extra"
+        # \n and \x0b are both stripped
+        assert result["categories"][0]["note"] == "line1line2extra"
 
     def test_sanitized_output_produces_valid_json(self):
         """Output with sanitized strings produces valid JSON."""
@@ -83,7 +104,8 @@ class TestConvertMonetaryFieldsSanitization:
         # This should not raise JSONDecodeError
         json_str = json.dumps(result)
         parsed = json.loads(json_str)
-        assert parsed["note"] == "Category noteswithcontrolchars\nand newlines"
+        # All control chars including \n are stripped
+        assert parsed["note"] == "Category noteswithcontrolcharsand newlines"
         assert parsed["budgeted"] == 250.0
 
     def test_monetary_conversion_still_works(self):

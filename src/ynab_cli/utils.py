@@ -3,8 +3,11 @@
 import re
 from typing import Any
 
-# Control characters that are invalid in JSON (except \t, \n, \r which json.dumps handles)
-_INVALID_JSON_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+# All ASCII control characters (0x00-0x1f) are stripped from API string values.
+# Although json.dumps escapes \t, \n, and \r, keeping raw control characters in
+# Python string values is fragile: any code path that bypasses json.dumps would
+# produce invalid JSON.  Stripping them all is the safest defensive approach.
+_INVALID_JSON_CONTROL_RE = re.compile(r"[\x00-\x1f]")
 
 # Goal type display names
 GOAL_TYPE_NAMES: dict[str, str] = {
@@ -65,12 +68,13 @@ def dollars_to_milliunits(amount: float) -> int:
 
 def sanitize_string(value: str) -> str:
     """
-    Remove invalid JSON control characters from a string.
+    Remove all ASCII control characters (0x00-0x1f) from a string.
 
     The YNAB API can return strings (e.g., category notes) containing raw control
-    characters that produce invalid JSON when serialized. This replaces problematic
-    control characters while preserving tabs, newlines, and carriage returns which
-    json.dumps() handles correctly via escaping.
+    characters.  Although json.dumps() escapes \\t, \\n, and \\r, keeping them as
+    raw characters in Python string values is fragile — any code path that does not
+    go through json.dumps() would produce invalid JSON.  Stripping all control
+    characters defensively avoids this class of bug entirely.
 
     Args:
         value: String potentially containing control characters
