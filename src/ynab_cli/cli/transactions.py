@@ -136,8 +136,35 @@ async def _list_transactions_async(
     since_date: str | None,
     transaction_type: str | None,
 ) -> dict[str, Any]:
-    """Async helper to fetch transactions."""
+    """Async helper to fetch transactions.
+
+    When transaction_type contains multiple comma-separated values (e.g. 'unapproved,uncategorized'),
+    makes a separate API call for each type and merges results, deduplicating by transaction ID.
+    The YNAB API only accepts a single type value per request.
+    """
     async with YNABClient() as client:
+        if transaction_type and "," in transaction_type:
+            types = [t.strip() for t in transaction_type.split(",")]
+            results = await asyncio.gather(
+                *[
+                    client.get_transactions(
+                        budget_id=budget_id,
+                        since_date=since_date,
+                        transaction_type=t,
+                    )
+                    for t in types
+                ]
+            )
+            seen: set[str] = set()
+            merged: list[Any] = []
+            for result in results:
+                for txn in result["data"]["transactions"]:
+                    if txn["id"] not in seen:
+                        seen.add(txn["id"])
+                        merged.append(txn)
+            # Return in the same shape as a single API response
+            return {"data": {"transactions": merged}}
+
         return await client.get_transactions(
             budget_id=budget_id,
             since_date=since_date,

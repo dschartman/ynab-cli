@@ -180,6 +180,81 @@ class TestTransactionsList:
                 call_kwargs = mock_client.get_transactions.call_args[1]
                 assert call_kwargs.get("transaction_type") == "unapproved"
 
+    def test_transactions_list_combined_type_makes_two_calls(self, cli_runner):
+        """Test that --type unapproved,uncategorized makes two separate API calls and merges results."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+        mock_settings.default_budget_id = "budget-1"
+        mock_settings.base_url = "https://api.ynab.com/v1"
+
+        unapproved_txn = {
+            "id": "txn-unapproved",
+            "date": "2024-01-15",
+            "amount": -10000,
+            "cleared": "uncleared",
+            "approved": False,
+            "payee_name": "Pending",
+            "category_name": "Groceries",
+            "account_name": "Checking",
+        }
+        uncategorized_txn = {
+            "id": "txn-uncategorized",
+            "date": "2024-01-14",
+            "amount": -5000,
+            "cleared": "cleared",
+            "approved": True,
+            "payee_name": "Gas Station",
+            "category_name": None,
+            "account_name": "Checking",
+        }
+        overlap_txn = {
+            "id": "txn-overlap",
+            "date": "2024-01-13",
+            "amount": -3000,
+            "cleared": "uncleared",
+            "approved": False,
+            "payee_name": "Overlap",
+            "category_name": None,
+            "account_name": "Checking",
+        }
+
+        def side_effect(**kwargs):
+            t = kwargs.get("transaction_type")
+            if t == "unapproved":
+                return {"data": {"transactions": [unapproved_txn, overlap_txn]}}
+            elif t == "uncategorized":
+                return {"data": {"transactions": [uncategorized_txn, overlap_txn]}}
+            return {"data": {"transactions": []}}
+
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            with patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.get_transactions = AsyncMock(side_effect=side_effect)
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                result = cli_runner.invoke(
+                    app, ["transactions", "list", "--type", "unapproved,uncategorized"]
+                )
+
+                assert result.exit_code == 0
+                output_data = json.loads(result.stdout)
+                assert "transactions" in output_data
+
+                # Should have made two separate API calls
+                assert mock_client.get_transactions.call_count == 2
+                call_types = {
+                    call[1].get("transaction_type")
+                    for call in mock_client.get_transactions.call_args_list
+                }
+                assert call_types == {"unapproved", "uncategorized"}
+
+                # Should deduplicate — overlap_txn appears in both but only once in output
+                ids = [t["id"] for t in output_data["transactions"]]
+                assert len(ids) == len(set(ids)), "Duplicate transactions in output"
+                assert set(ids) == {"txn-unapproved", "txn-uncategorized", "txn-overlap"}
+
     def test_transactions_list_with_limit(self, cli_runner, mock_transactions_response):
         """Test transactions list with limit."""
         mock_settings = MagicMock()
