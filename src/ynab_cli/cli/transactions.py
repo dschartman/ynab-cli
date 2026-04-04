@@ -612,6 +612,195 @@ async def _delete_transaction_async(
         )
 
 
+def _parse_split_spec(spec: str) -> tuple[str | None, str, str | None]:
+    """
+    Parse a --split value into (amount_str, category_name, memo).
+
+    Format: "amount:category[:memo]"
+    Fill-remainder form: ":category[:memo]" (empty amount)
+    """
+    parts = spec.split(":", 2)
+    if len(parts) < 2:
+        raise ValueError(f"Invalid --split format '{spec}': expected 'amount:category[:memo]'")
+    amount_str = parts[0].strip() or None
+    category = parts[1].strip()
+    memo = parts[2].strip() if len(parts) == 3 and parts[2].strip() else None
+    if not category:
+        raise ValueError(f"Invalid --split format '{spec}': category name is required")
+    return amount_str, category, memo
+
+
+@transactions_app.command("split")
+def split_transaction(
+    transaction_id: str = typer.Argument(
+        ...,
+        help="Transaction ID to split",
+    ),
+    split: list[str] = typer.Option(
+        ...,
+        "--split",
+        help=(
+            "Split specification: 'amount:category[:memo]'. "
+            "Repeat for each split. "
+            "Last split may use ':category' (no amount) to fill the remainder. "
+            "Example: --split '30.00:Pets' --split ':Home Improvement'"
+        ),
+    ),
+    budget: str | None = typer.Option(
+        None,
+        "--budget",
+        help="Budget ID (overrides default)",
+    ),
+) -> None:
+    """
+    Split a transaction across multiple categories.
+
+    Fetches the existing transaction, validates the split amounts, resolves
+    category names, and updates the transaction with subtransactions.
+
+    The YNAB API does not allow modifying subtransactions on an already-split
+    transaction. If the transaction is already split, delete it in YNAB and
+    recreate it.
+
+    Examples:
+        # Split with explicit amounts
+        ynab transactions split txn-123 \\
+            --split "30.00:Pets" \\
+            --split "42.71:Home Improvement"
+
+        # Fill remainder on last split
+        ynab transactions split txn-123 \\
+            --split "30.00:Pets" \\
+            --split ":Home Improvement"
+
+        # With per-split memo
+        ynab transactions split txn-123 \\
+            --split "30.00:Pets:vet supplies" \\
+            --split ":Home Improvement"
+    """
+    if not settings or not settings.api_token:
+        console.print("[red]Error: API token not configured[/red]")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1) from None
+
+    if len(split) < 2:
+        console.print("[red]Error: At least 2 --split values are required[/red]")
+        raise typer.Exit(1) from None
+
+    try:
+        # Parse split specs
+        specs: list[tuple[str | None, str, str | None]] = []
+        for s in split:
+            specs.append(_parse_split_spec(s))
+
+        # Validate: only the last split may be a fill-remainder
+        for i, (amount_str, cat, _) in enumerate(specs[:-1]):
+            if amount_str is None:
+                console.print(
+                    f"[red]Error: Only the last --split may omit the amount (fill remainder). "
+                    f"Split {i + 1} has no amount.[/red]"
+                )
+                raise typer.Exit(1) from None
+
+        # Fetch the parent transaction
+        parent_response = asyncio.run(
+            _get_transaction_async(transaction_id=transaction_id, budget_id=budget)
+        )
+        parent = parent_response["data"]["transaction"]
+
+        # Error if already split
+        if parent.get("subtransactions"):
+            console.print(
+                "[red]Error: This transaction is already split. "
+                "Delete it in YNAB and recreate to re-split.[/red]"
+            )
+            raise typer.Exit(1) from None
+
+        parent_amount = parent["amount"]  # milliunits, negative for expenses
+
+        # Compute explicit amounts in milliunits and validate
+        has_remainder = specs[-1][0] is None
+        explicit_total = 0
+        sub_amounts: list[int] = []
+
+        for i, (amount_str, _cat, _memo) in enumerate(specs):
+            if amount_str is None:
+                # Placeholder — filled after loop
+                sub_amounts.append(0)
+                continue
+            try:
+                dollars = float(amount_str)
+            except ValueError:
+                console.print(f"[red]Error: Invalid amount '{amount_str}' in split {i + 1}[/red]")
+                raise typer.Exit(1) from None
+            # Match sign of parent
+            millis = int(round(dollars * 1000))
+            if parent_amount < 0:
+                millis = -abs(millis)
+            else:
+                millis = abs(millis)
+            sub_amounts.append(millis)
+            explicit_total += millis
+
+        if has_remainder:
+            remainder = parent_amount - explicit_total
+            if (parent_amount < 0 and remainder > 0) or (parent_amount >= 0 and remainder < 0):
+                console.print(
+                    f"[red]Error: Explicit split amounts (${abs(explicit_total) / 1000:.2f}) "
+                    f"already exceed the transaction total (${abs(parent_amount) / 1000:.2f})[/red]"
+                )
+                raise typer.Exit(1) from None
+            sub_amounts[-1] = remainder
+        else:
+            if explicit_total != parent_amount:
+                console.print(
+                    f"[red]Error: Split amounts total ${abs(explicit_total) / 1000:.2f} "
+                    f"but transaction is ${abs(parent_amount) / 1000:.2f}. "
+                    f"Amounts must sum exactly to the transaction total.[/red]"
+                )
+                raise typer.Exit(1) from None
+
+        # Resolve category names and build subtransactions
+        subtransactions = []
+        for (amount_str, cat_name, memo), millis in zip(specs, sub_amounts):
+            cat_id = resolve_category_name(cat_name, budget_id=budget)
+            sub: dict[str, Any] = {"amount": millis, "category_id": cat_id}
+            if memo:
+                sub["memo"] = memo
+            subtransactions.append(sub)
+
+        # Update the transaction: null out category, add subtransactions
+        response = asyncio.run(
+            _update_transaction_async(
+                transaction_id=transaction_id,
+                budget_id=budget,
+                updates={"category_id": None, "subtransactions": subtransactions},
+            )
+        )
+
+        updated = response["data"]["transaction"]
+        output = convert_monetary_fields({"transaction": updated})
+        print(json.dumps(output, indent=2))
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        handle_cli_error(e)
+        raise typer.Exit(1) from None
+
+
+async def _get_transaction_async(
+    transaction_id: str,
+    budget_id: str | None,
+) -> dict[str, Any]:
+    """Async helper to fetch a single transaction."""
+    async with YNABClient() as client:
+        return await client.get_transaction(
+            transaction_id=transaction_id,
+            budget_id=budget_id,
+        )
+
+
 @transactions_app.command("transfer")
 def transfer_between_accounts(
     from_account: str = typer.Option(

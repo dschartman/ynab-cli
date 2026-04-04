@@ -215,6 +215,25 @@ class YNABClient:
             response.raise_for_status()
             return cast("dict[str, Any]", response.json())
 
+    async def get_transaction(
+        self, transaction_id: str, budget_id: str | None = None
+    ) -> dict[str, Any]:
+        """
+        Get a single transaction by ID.
+
+        Args:
+            transaction_id: Transaction ID
+            budget_id: Budget ID (defaults to configured budget)
+
+        Returns:
+            Transaction response
+        """
+        bid = budget_id or self.budget_id
+        async with self.limiter:
+            response = await self.client.get(f"/budgets/{bid}/transactions/{transaction_id}")
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
+
     async def update_transaction(
         self, transaction_id: str, budget_id: str | None = None, **updates: Any
     ) -> dict[str, Any]:

@@ -1340,3 +1340,230 @@ class TestTransactionNameResolution:
 
             assert result.exit_code != 0
             assert "Cannot use both" in result.stdout
+
+
+class TestTransactionsSplit:
+    """Tests for 'ynab transactions split' command."""
+
+    @pytest.fixture
+    def mock_settings(self):
+        s = MagicMock()
+        s.api_token = "test-token"
+        s.default_budget_id = "budget-1"
+        s.base_url = "https://api.ynab.com/v1"
+        return s
+
+    @pytest.fixture
+    def parent_txn(self):
+        """A non-split transaction for -$72.71."""
+        return {
+            "id": "txn-parent",
+            "date": "2024-03-15",
+            "amount": -72710,  # -$72.71
+            "memo": "Menards",
+            "cleared": "cleared",
+            "approved": False,
+            "payee_name": "Menards",
+            "category_name": "Home Improvement",
+            "account_name": "Checking",
+            "subtransactions": [],
+        }
+
+    @pytest.fixture
+    def already_split_txn(self):
+        """A transaction that is already split."""
+        return {
+            "id": "txn-split",
+            "date": "2024-03-15",
+            "amount": -72710,
+            "memo": "Already split",
+            "cleared": "cleared",
+            "approved": True,
+            "payee_name": "Menards",
+            "category_name": None,
+            "account_name": "Checking",
+            "subtransactions": [
+                {"id": "sub-1", "amount": -30000, "category_name": "Pets"},
+                {"id": "sub-2", "amount": -42710, "category_name": "Home Improvement"},
+            ],
+        }
+
+    def _make_client_mock(self, mock_client_class, get_txn_response, update_response=None):
+        mock_client = AsyncMock()
+        mock_client.get_transaction = AsyncMock(return_value=get_txn_response)
+        mock_client.update_transaction = AsyncMock(
+            return_value=update_response or {"data": {"transaction": get_txn_response}}
+        )
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client_class.return_value = mock_client
+        return mock_client
+
+    def test_split_basic_two_explicit_amounts(self, cli_runner, mock_settings, parent_txn):
+        """Split with two explicit amounts that sum to parent."""
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            with patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class:
+                with patch("ynab_cli.cli.transactions.resolve_category_name") as mock_resolve:
+                    mock_resolve.side_effect = lambda name, **kw: f"cat-{name.lower().replace(' ', '-')}"
+                    mock_client = self._make_client_mock(
+                        mock_client_class,
+                        {"data": {"transaction": parent_txn}},
+                    )
+
+                    result = cli_runner.invoke(
+                        app,
+                        [
+                            "transactions", "split", "txn-parent",
+                            "--split", "30.00:Pets",
+                            "--split", "42.71:Home Improvement",
+                        ],
+                    )
+
+                    assert result.exit_code == 0, result.stdout
+                    mock_client.update_transaction.assert_called_once()
+                    call_kwargs = mock_client.update_transaction.call_args[1]
+                    assert call_kwargs["transaction_id"] == "txn-parent"
+                    assert call_kwargs["category_id"] is None
+                    subs = call_kwargs["subtransactions"]
+                    assert len(subs) == 2
+                    assert subs[0]["amount"] == -30000
+                    assert subs[1]["amount"] == -42710
+                    assert subs[0]["category_id"] == "cat-pets"
+                    assert subs[1]["category_id"] == "cat-home-improvement"
+
+    def test_split_fill_remainder_on_last(self, cli_runner, mock_settings, parent_txn):
+        """Last split with no amount fills the remainder."""
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            with patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class:
+                with patch("ynab_cli.cli.transactions.resolve_category_name") as mock_resolve:
+                    mock_resolve.side_effect = lambda name, **kw: f"cat-{name.lower().replace(' ', '-')}"
+                    self._make_client_mock(
+                        mock_client_class,
+                        {"data": {"transaction": parent_txn}},
+                    )
+
+                    result = cli_runner.invoke(
+                        app,
+                        [
+                            "transactions", "split", "txn-parent",
+                            "--split", "30.00:Pets",
+                            "--split", ":Home Improvement",
+                        ],
+                    )
+
+                    assert result.exit_code == 0, result.stdout
+                    mock_client = mock_client_class.return_value
+                    call_kwargs = mock_client.update_transaction.call_args[1]
+                    subs = call_kwargs["subtransactions"]
+                    assert len(subs) == 2
+                    assert subs[0]["amount"] == -30000
+                    assert subs[1]["amount"] == -42710  # remainder: -72710 - (-30000)
+
+    def test_split_with_memo(self, cli_runner, mock_settings, parent_txn):
+        """Per-split memo is passed through."""
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            with patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class:
+                with patch("ynab_cli.cli.transactions.resolve_category_name") as mock_resolve:
+                    mock_resolve.side_effect = lambda name, **kw: f"cat-{name.lower()}"
+                    self._make_client_mock(
+                        mock_client_class,
+                        {"data": {"transaction": parent_txn}},
+                    )
+
+                    result = cli_runner.invoke(
+                        app,
+                        [
+                            "transactions", "split", "txn-parent",
+                            "--split", "30.00:Pets:vet supplies",
+                            "--split", ":Home Improvement",
+                        ],
+                    )
+
+                    assert result.exit_code == 0, result.stdout
+                    mock_client = mock_client_class.return_value
+                    subs = mock_client.update_transaction.call_args[1]["subtransactions"]
+                    assert subs[0]["memo"] == "vet supplies"
+                    assert "memo" not in subs[1]
+
+    def test_split_already_split_errors(self, cli_runner, mock_settings, already_split_txn):
+        """Errors with a clear message if transaction is already split."""
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            with patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class:
+                self._make_client_mock(
+                    mock_client_class,
+                    {"data": {"transaction": already_split_txn}},
+                )
+
+                result = cli_runner.invoke(
+                    app,
+                    [
+                        "transactions", "split", "txn-split",
+                        "--split", "30.00:Pets",
+                        "--split", "42.71:Home Improvement",
+                    ],
+                )
+
+                assert result.exit_code != 0
+                assert "already split" in result.stdout.lower()
+
+    def test_split_amounts_dont_sum_errors(self, cli_runner, mock_settings, parent_txn):
+        """Errors when explicit amounts don't sum to parent amount."""
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            with patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class:
+                with patch("ynab_cli.cli.transactions.resolve_category_name") as mock_resolve:
+                    mock_resolve.side_effect = lambda name, **kw: f"cat-{name.lower()}"
+                    self._make_client_mock(
+                        mock_client_class,
+                        {"data": {"transaction": parent_txn}},
+                    )
+
+                    result = cli_runner.invoke(
+                        app,
+                        [
+                            "transactions", "split", "txn-parent",
+                            "--split", "30.00:Pets",
+                            "--split", "50.00:Home Improvement",  # 30+50=80, not 72.71
+                        ],
+                    )
+
+                    assert result.exit_code != 0
+                    assert "sum" in result.stdout.lower() or "total" in result.stdout.lower()
+
+    def test_split_only_one_split_errors(self, cli_runner, mock_settings, parent_txn):
+        """Errors when fewer than two splits are provided."""
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            with patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class:
+                self._make_client_mock(
+                    mock_client_class,
+                    {"data": {"transaction": parent_txn}},
+                )
+
+                result = cli_runner.invoke(
+                    app,
+                    ["transactions", "split", "txn-parent", "--split", "72.71:Pets"],
+                )
+
+                assert result.exit_code != 0
+                assert "2" in result.stdout or "two" in result.stdout.lower() or "least" in result.stdout.lower()
+
+    def test_split_remainder_exceeds_parent_errors(self, cli_runner, mock_settings, parent_txn):
+        """Errors when explicit amounts already exceed the parent total."""
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            with patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class:
+                with patch("ynab_cli.cli.transactions.resolve_category_name") as mock_resolve:
+                    mock_resolve.side_effect = lambda name, **kw: f"cat-{name.lower()}"
+                    self._make_client_mock(
+                        mock_client_class,
+                        {"data": {"transaction": parent_txn}},
+                    )
+
+                    result = cli_runner.invoke(
+                        app,
+                        [
+                            "transactions", "split", "txn-parent",
+                            "--split", "80.00:Pets",  # exceeds -72.71
+                            "--split", ":Home Improvement",
+                        ],
+                    )
+
+                    assert result.exit_code != 0
