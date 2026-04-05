@@ -1286,6 +1286,50 @@ class TestTransactionNameResolution:
             assert result.exit_code != 0
             assert "Cannot use both" in result.stdout
 
+    def test_create_with_payee_name_not_found_auto_creates(
+        self, cli_runner, mock_create_response
+    ):
+        """Test that --payee-name falls back to passing payee_name to API when payee not found."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = "test-token"
+
+        with (
+            patch("ynab_cli.cli.transactions.settings", mock_settings),
+            patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class,
+            patch(
+                "ynab_cli.cli.transactions.resolve_payee_name",
+                side_effect=ValueError("Payee not found: 'Toilet replacement'"),
+            ),
+        ):
+            mock_client = AsyncMock()
+            mock_client.create_transaction = AsyncMock(return_value=mock_create_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = cli_runner.invoke(
+                app,
+                [
+                    "transactions",
+                    "create",
+                    "--account",
+                    "acct-1",
+                    "--date",
+                    "2024-01-15",
+                    "--amount",
+                    "-150.00",
+                    "--payee-name",
+                    "Toilet replacement",
+                ],
+            )
+
+            assert result.exit_code == 0
+            call_args = mock_client.create_transaction.call_args
+            txn = call_args[1]["transaction"]
+            # Should pass payee_name directly, not payee_id
+            assert txn.get("payee_name") == "Toilet replacement"
+            assert "payee_id" not in txn
+
     def test_update_with_category_name(self, cli_runner, mock_update_response):
         """Test transactions update with --category-name."""
         mock_settings = MagicMock()

@@ -307,7 +307,11 @@ def create_transaction(
             if payee:
                 console.print("[red]Error: Cannot use both --payee and --payee-name[/red]")
                 raise typer.Exit(1) from None
-            payee = resolve_payee_name(payee_name, budget_id=budget)
+            try:
+                payee = resolve_payee_name(payee_name, budget_id=budget)
+            except ValueError:
+                # Payee doesn't exist yet — pass payee_name directly so YNAB auto-creates it
+                pass
 
         if category_name:
             if category:
@@ -328,6 +332,9 @@ def create_transaction(
         # Add optional fields
         if payee:
             transaction["payee_id"] = payee
+        elif payee_name:
+            # payee_name was given but not found — pass directly for YNAB auto-creation
+            transaction["payee_name"] = payee_name
         if category:
             transaction["category_id"] = category
         if memo:
