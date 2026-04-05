@@ -489,3 +489,108 @@ class TestCategoriesBudget:
 
                 assert result.exit_code != 0
                 assert "Error" in result.stdout
+
+
+class TestGetCategory:
+    """Tests for categories get command."""
+
+    @pytest.fixture
+    def cli_runner(self):
+        from typer.testing import CliRunner
+        return CliRunner()
+
+    @pytest.fixture
+    def mock_settings(self):
+        s = MagicMock()
+        s.api_token = "test-token"
+        s.budget_id = "budget-1"
+        return s
+
+    def test_get_category_json_output(self, cli_runner, mock_settings):
+        """Fetch a single category by ID, JSON output."""
+        mock_response = {
+            "data": {
+                "category": {
+                    "id": "cat-abc",
+                    "name": "Groceries",
+                    "budgeted": 300000,
+                    "activity": -125000,
+                    "balance": 175000,
+                    "goal_type": "NEED",
+                    "goal_target": 300000,
+                    "hidden": False,
+                    "deleted": False,
+                }
+            }
+        }
+
+        with (
+            patch("ynab_cli.cli.categories.settings", mock_settings),
+            patch("ynab_cli.cli.categories.YNABClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client.get_category = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = cli_runner.invoke(
+                app,
+                ["categories", "get", "cat-abc"],
+            )
+
+            assert result.exit_code == 0
+            output = json.loads(result.stdout)
+            assert output["category"]["id"] == "cat-abc"
+            assert output["category"]["budgeted"] == 300.0
+            assert output["category"]["balance"] == 175.0
+            assert output["category"]["goal_type_name"] == "Plan Your Spending"
+            mock_client.get_category.assert_called_once_with(
+                category_id="cat-abc", budget_id=None
+            )
+
+    def test_get_category_with_month(self, cli_runner, mock_settings):
+        """Fetch a category for a specific month."""
+        mock_response = {
+            "data": {
+                "category": {
+                    "id": "cat-abc",
+                    "name": "Groceries",
+                    "budgeted": 300000,
+                    "activity": -125000,
+                    "balance": 175000,
+                    "goal_type": None,
+                }
+            }
+        }
+
+        with (
+            patch("ynab_cli.cli.categories.settings", mock_settings),
+            patch("ynab_cli.cli.categories.YNABClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client.get_category_month = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = cli_runner.invoke(
+                app,
+                ["categories", "get", "cat-abc", "--month", "2026-04-01"],
+            )
+
+            assert result.exit_code == 0
+            output = json.loads(result.stdout)
+            assert output["category"]["id"] == "cat-abc"
+            mock_client.get_category_month.assert_called_once_with(
+                category_id="cat-abc", month="2026-04-01", budget_id=None
+            )
+
+    def test_get_category_no_token(self, cli_runner):
+        """Error when API token not configured."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = None
+
+        with patch("ynab_cli.cli.categories.settings", mock_settings):
+            result = cli_runner.invoke(app, ["categories", "get", "cat-abc"])
+            assert result.exit_code != 0

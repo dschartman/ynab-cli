@@ -213,6 +213,85 @@ async def _budget_category_async(
         )
 
 
+@categories_app.command("get")
+def get_category(
+    category_id: str = typer.Argument(
+        ...,
+        help="Category ID to fetch",
+    ),
+    month: str | None = typer.Option(
+        None,
+        "--month",
+        help="Month in YYYY-MM-01 format — returns month-specific balances",
+    ),
+    budget: str | None = typer.Option(
+        None,
+        "--budget",
+        help="Budget ID (overrides default)",
+    ),
+) -> None:
+    """
+    Fetch a single category by ID.
+
+    Without --month, returns the current category data. With --month, returns
+    the category's balances for that specific month.
+
+    Examples:
+        ynab categories get cat-123
+        ynab categories get cat-123 --month 2026-04-01
+    """
+    if not settings or not settings.api_token:
+        console.print("[red]Error: API token not configured[/red]")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1) from None
+
+    try:
+        if month:
+            response = asyncio.run(
+                _get_category_month_async(
+                    category_id=category_id,
+                    month=month,
+                    budget_id=budget,
+                )
+            )
+        else:
+            response = asyncio.run(
+                _get_category_async(
+                    category_id=category_id,
+                    budget_id=budget,
+                )
+            )
+
+        category = response["data"]["category"]
+        output = convert_monetary_fields({"category": category})
+        print(json.dumps(output, indent=2))
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e!s}")
+        raise typer.Exit(1) from None
+
+
+async def _get_category_async(
+    category_id: str,
+    budget_id: str | None,
+) -> dict[str, Any]:
+    """Async helper to fetch a single category."""
+    async with YNABClient() as client:
+        return await client.get_category(category_id=category_id, budget_id=budget_id)
+
+
+async def _get_category_month_async(
+    category_id: str,
+    month: str,
+    budget_id: str | None,
+) -> dict[str, Any]:
+    """Async helper to fetch a category for a specific month."""
+    async with YNABClient() as client:
+        return await client.get_category_month(
+            category_id=category_id, month=month, budget_id=budget_id
+        )
+
+
 def _print_categories_grouped(category_groups: list, show_goals: bool) -> None:
     """Print categories grouped by category groups."""
     for group in category_groups:

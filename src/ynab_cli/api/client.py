@@ -153,6 +153,47 @@ class YNABClient:
             response.raise_for_status()
             return cast("dict[str, Any]", response.json())
 
+    async def get_category(
+        self, category_id: str, budget_id: str | None = None
+    ) -> dict[str, Any]:
+        """
+        Get a single category by ID.
+
+        Args:
+            category_id: Category ID
+            budget_id: Budget ID (defaults to configured budget)
+
+        Returns:
+            Category response
+        """
+        bid = budget_id or self.budget_id
+        async with self.limiter:
+            response = await self.client.get(f"/budgets/{bid}/categories/{category_id}")
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
+
+    async def get_category_month(
+        self, category_id: str, month: str, budget_id: str | None = None
+    ) -> dict[str, Any]:
+        """
+        Get a single category for a specific month.
+
+        Args:
+            category_id: Category ID
+            month: Month in YYYY-MM-01 format
+            budget_id: Budget ID (defaults to configured budget)
+
+        Returns:
+            Category month response
+        """
+        bid = budget_id or self.budget_id
+        async with self.limiter:
+            response = await self.client.get(
+                f"/budgets/{bid}/months/{month}/categories/{category_id}"
+            )
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
+
     async def get_month(self, month: str, budget_id: str | None = None) -> dict[str, Any]:
         """
         Get budget data for a specific month, including category balances.
