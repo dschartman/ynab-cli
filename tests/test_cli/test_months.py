@@ -1,5 +1,6 @@
 """Tests for months CLI commands."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -248,3 +249,72 @@ class TestMonthsGet:
                     "To Be Budgeted" in result.stdout or "to be budgeted" in result.stdout.lower()
                 )
                 assert "$50.00" in result.stdout
+
+
+class TestListMonths:
+    """Tests for months list command."""
+
+    @pytest.fixture
+    def cli_runner(self):
+        from typer.testing import CliRunner
+        return CliRunner()
+
+    @pytest.fixture
+    def mock_settings(self):
+        s = MagicMock()
+        s.api_token = "test-token"
+        s.budget_id = "budget-1"
+        return s
+
+    def test_list_months_json_output(self, cli_runner, mock_settings):
+        """List all months, JSON output."""
+        mock_response = {
+            "data": {
+                "months": [
+                    {
+                        "month": "2026-04-01",
+                        "income": 1478400000,
+                        "budgeted": 1476700000,
+                        "activity": -800000000,
+                        "to_be_budgeted": 1700000,
+                        "note": None,
+                    },
+                    {
+                        "month": "2026-03-01",
+                        "income": 1478400000,
+                        "budgeted": 1476700000,
+                        "activity": -1476700000,
+                        "to_be_budgeted": 0,
+                        "note": None,
+                    },
+                ]
+            }
+        }
+
+        with (
+            patch("ynab_cli.cli.months.settings", mock_settings),
+            patch("ynab_cli.cli.months.YNABClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client.get_months = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = cli_runner.invoke(app, ["months", "list"])
+
+            assert result.exit_code == 0
+            output = json.loads(result.stdout)
+            assert len(output["months"]) == 2
+            assert output["months"][0]["month"] == "2026-04-01"
+            assert output["months"][0]["income"] == 1478400.0
+            mock_client.get_months.assert_called_once_with(budget_id=None)
+
+    def test_list_months_no_token(self, cli_runner):
+        """Error when API token not configured."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = None
+
+        with patch("ynab_cli.cli.months.settings", mock_settings):
+            result = cli_runner.invoke(app, ["months", "list"])
+            assert result.exit_code != 0

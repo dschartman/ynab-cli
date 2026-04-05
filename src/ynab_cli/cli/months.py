@@ -118,6 +118,45 @@ async def _get_month_async(month: str, budget_id: str | None) -> dict[str, Any]:
         )
 
 
+@months_app.command("list")
+def list_months(
+    budget: str | None = typer.Option(
+        None,
+        "--budget",
+        help="Budget ID (overrides default)",
+    ),
+) -> None:
+    """
+    List all budget months.
+
+    Returns available months with income, budgeted, activity, and to_be_budgeted.
+    Amounts are in dollars.
+
+    Examples:
+        ynab months list
+    """
+    if not settings or not settings.api_token:
+        console.print("[red]Error: API token not configured[/red]")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1) from None
+
+    try:
+        response = asyncio.run(_list_months_async(budget_id=budget))
+        months = response["data"]["months"]
+        output = convert_monetary_fields({"months": months})
+        print(json.dumps(output, indent=2))
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e!s}")
+        raise typer.Exit(1) from None
+
+
+async def _list_months_async(budget_id: str | None) -> dict[str, Any]:
+    """Async helper to fetch all budget months."""
+    async with YNABClient() as client:
+        return await client.get_months(budget_id=budget_id)
+
+
 def _print_month_summary(month_data: dict) -> None:
     """Print month summary in human-readable format."""
     # Header
