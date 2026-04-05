@@ -1760,3 +1760,68 @@ class TestBulkApprove:
             assert result.exit_code == 0
             # No bulk update call when nothing to approve
             mock_client.update_transactions_bulk.assert_not_called()
+
+
+class TestGetTransaction:
+    """Tests for transactions get command."""
+
+    @pytest.fixture
+    def cli_runner(self):
+        from typer.testing import CliRunner
+        return CliRunner()
+
+    @pytest.fixture
+    def mock_settings(self):
+        s = MagicMock()
+        s.api_token = "test-token"
+        s.budget_id = "budget-1"
+        return s
+
+    def test_get_transaction_json_output(self, cli_runner, mock_settings):
+        """Fetch a single transaction by ID, JSON output."""
+        mock_response = {
+            "data": {
+                "transaction": {
+                    "id": "txn-abc",
+                    "date": "2024-03-01",
+                    "amount": -25000,
+                    "payee_name": "Whole Foods",
+                    "category_name": "Groceries",
+                    "cleared": "cleared",
+                    "approved": True,
+                    "account_id": "acct-1",
+                }
+            }
+        }
+
+        with (
+            patch("ynab_cli.cli.transactions.settings", mock_settings),
+            patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client.get_transaction = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = cli_runner.invoke(
+                app,
+                ["transactions", "get", "txn-abc"],
+            )
+
+            assert result.exit_code == 0
+            output = json.loads(result.stdout)
+            assert output["transaction"]["id"] == "txn-abc"
+            assert output["transaction"]["amount"] == -25.0
+            mock_client.get_transaction.assert_called_once_with(
+                transaction_id="txn-abc", budget_id=None
+            )
+
+    def test_get_transaction_no_token(self, cli_runner):
+        """Error when API token not configured."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = None
+
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            result = cli_runner.invoke(app, ["transactions", "get", "txn-abc"])
+            assert result.exit_code != 0

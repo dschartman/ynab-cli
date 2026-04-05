@@ -901,6 +901,45 @@ async def _get_transaction_async(
         )
 
 
+@transactions_app.command("get")
+def get_transaction(
+    transaction_id: str = typer.Argument(
+        ...,
+        help="Transaction ID to fetch",
+    ),
+    budget: str | None = typer.Option(
+        None,
+        "--budget",
+        help="Budget ID (overrides default)",
+    ),
+) -> None:
+    """
+    Fetch a single transaction by ID.
+
+    Examples:
+        ynab transactions get txn-123
+    """
+    if not settings or not settings.api_token:
+        console.print("[red]Error: API token not configured[/red]")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1) from None
+
+    try:
+        response = asyncio.run(
+            _get_transaction_async(
+                transaction_id=transaction_id,
+                budget_id=budget,
+            )
+        )
+        txn = response["data"]["transaction"]
+        output = convert_monetary_fields({"transaction": txn})
+        print(json.dumps(output, indent=2))
+
+    except Exception as e:
+        handle_cli_error(e)
+        raise typer.Exit(1) from None
+
+
 @transactions_app.command("transfer")
 def transfer_between_accounts(
     from_account: str = typer.Option(
