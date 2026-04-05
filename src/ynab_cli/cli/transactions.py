@@ -619,6 +619,99 @@ async def _delete_transaction_async(
         )
 
 
+@transactions_app.command("approve")
+def approve_transactions(
+    transaction_ids: list[str] = typer.Argument(
+        default=None,
+        help="Transaction IDs to approve",
+    ),
+    matched_cleared: bool = typer.Option(
+        False,
+        "--matched-cleared",
+        help="Approve all unapproved transactions that are both matched and cleared",
+    ),
+    budget: str | None = typer.Option(
+        None,
+        "--budget",
+        help="Budget ID (overrides default)",
+    ),
+) -> None:
+    """
+    Approve one or more transactions.
+
+    Provide explicit IDs, or use --matched-cleared to automatically approve all
+    unapproved transactions that are both matched (imported) and cleared — these
+    are always safe to approve without manual review.
+
+    Examples:
+        # Approve specific transactions
+        ynab transactions approve txn-123 txn-456
+
+        # Approve all matched+cleared unapproved transactions
+        ynab transactions approve --matched-cleared
+    """
+    if not settings or not settings.api_token:
+        console.print("[red]Error: API token not configured[/red]")
+        console.print("Run 'ynab login' to configure your API token")
+        raise typer.Exit(1) from None
+
+    if not transaction_ids and not matched_cleared:
+        console.print(
+            "[red]Error: Provide at least one transaction ID or use --matched-cleared[/red]"
+        )
+        raise typer.Exit(1) from None
+
+    try:
+        if matched_cleared:
+            # Fetch all unapproved transactions, filter to matched+cleared
+            response = asyncio.run(
+                _list_transactions_async(
+                    budget_id=budget,
+                    since_date=None,
+                    transaction_type="unapproved",
+                )
+            )
+            all_unapproved = response["data"]["transactions"]
+            ids_to_approve = [
+                txn["id"]
+                for txn in all_unapproved
+                if txn.get("cleared") == "cleared" and txn.get("matched_transaction_id")
+            ]
+            if not ids_to_approve:
+                console.print("No matched+cleared unapproved transactions found.")
+                return
+        else:
+            ids_to_approve = list(transaction_ids)
+
+        transactions = [{"id": tid, "approved": True} for tid in ids_to_approve]
+        result = asyncio.run(
+            _approve_transactions_async(
+                transactions=transactions,
+                budget_id=budget,
+            )
+        )
+
+        updated = result["data"]["transactions"]
+        output = convert_monetary_fields({"transactions": updated})
+        print(json.dumps(output, indent=2))
+
+    except Exception as e:
+        handle_cli_error(e)
+        raise typer.Exit(1) from None
+
+
+async def _approve_transactions_async(
+    transactions: list[dict[str, Any]],
+    budget_id: str | None,
+) -> dict[str, Any]:
+    """Async helper to bulk approve transactions."""
+    async with YNABClient() as client:
+        return await client.update_transactions_bulk(
+            transactions=transactions,
+            budget_id=budget_id,
+        )
+
+
 def _parse_split_spec(spec: str) -> tuple[str | None, str, str | None]:
     """
     Parse a --split value into (amount_str, category_name, memo).

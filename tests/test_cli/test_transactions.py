@@ -1611,3 +1611,152 @@ class TestTransactionsSplit:
                     )
 
                     assert result.exit_code != 0
+
+
+class TestBulkApprove:
+    """Tests for transactions approve command."""
+
+    @pytest.fixture
+    def cli_runner(self):
+        from typer.testing import CliRunner
+        return CliRunner()
+
+    @pytest.fixture
+    def mock_settings(self):
+        s = MagicMock()
+        s.api_token = "test-token"
+        s.budget_id = "budget-1"
+        return s
+
+    def _make_client_mock(self, mock_client_class, bulk_response=None):
+        mock_client = AsyncMock()
+        mock_client.update_transactions_bulk = AsyncMock(return_value=bulk_response or {"data": {"transactions": []}})
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client_class.return_value = mock_client
+        return mock_client
+
+    def test_approve_explicit_ids(self, cli_runner, mock_settings):
+        """Approve a list of explicit transaction IDs."""
+        bulk_response = {
+            "data": {
+                "transactions": [
+                    {"id": "txn-1", "approved": True, "amount": -5000, "date": "2024-01-15"},
+                    {"id": "txn-2", "approved": True, "amount": -3000, "date": "2024-01-16"},
+                ]
+            }
+        }
+
+        with (
+            patch("ynab_cli.cli.transactions.settings", mock_settings),
+            patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class,
+        ):
+            mock_client = self._make_client_mock(mock_client_class, bulk_response)
+
+            result = cli_runner.invoke(
+                app,
+                ["transactions", "approve", "txn-1", "txn-2"],
+            )
+
+            assert result.exit_code == 0
+            output = json.loads(result.stdout)
+            assert len(output["transactions"]) == 2
+            call_args = mock_client.update_transactions_bulk.call_args
+            txns = call_args[1]["transactions"]
+            assert len(txns) == 2
+            assert all(t["approved"] is True for t in txns)
+            assert {t["id"] for t in txns} == {"txn-1", "txn-2"}
+
+    def test_approve_matched_cleared(self, cli_runner, mock_settings):
+        """--matched-cleared fetches unapproved transactions and approves matched+cleared ones."""
+        list_response = {
+            "data": {
+                "transactions": [
+                    {"id": "txn-1", "approved": False, "cleared": "cleared", "matched_transaction_id": "import-1", "amount": -5000, "date": "2024-01-15"},
+                    {"id": "txn-2", "approved": False, "cleared": "cleared", "matched_transaction_id": None, "amount": -3000, "date": "2024-01-16"},
+                    {"id": "txn-3", "approved": False, "cleared": "uncleared", "matched_transaction_id": "import-2", "amount": -2000, "date": "2024-01-17"},
+                ]
+            }
+        }
+        bulk_response = {
+            "data": {
+                "transactions": [
+                    {"id": "txn-1", "approved": True, "amount": -5000, "date": "2024-01-15"},
+                ]
+            }
+        }
+
+        with (
+            patch("ynab_cli.cli.transactions.settings", mock_settings),
+            patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client.get_transactions = AsyncMock(return_value=list_response)
+            mock_client.update_transactions_bulk = AsyncMock(return_value=bulk_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = cli_runner.invoke(
+                app,
+                ["transactions", "approve", "--matched-cleared"],
+            )
+
+            assert result.exit_code == 0
+            # Only txn-1 is both cleared AND matched
+            call_args = mock_client.update_transactions_bulk.call_args
+            txns = call_args[1]["transactions"]
+            assert len(txns) == 1
+            assert txns[0]["id"] == "txn-1"
+            assert txns[0]["approved"] is True
+
+    def test_approve_requires_ids_or_flag(self, cli_runner, mock_settings):
+        """Error when neither IDs nor --matched-cleared is given."""
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            result = cli_runner.invoke(
+                app,
+                ["transactions", "approve"],
+            )
+            assert result.exit_code != 0
+            assert "transaction ID" in result.stdout.lower() or "matched" in result.stdout.lower()
+
+    def test_approve_no_token(self, cli_runner):
+        """Error when API token not configured."""
+        mock_settings = MagicMock()
+        mock_settings.api_token = None
+
+        with patch("ynab_cli.cli.transactions.settings", mock_settings):
+            result = cli_runner.invoke(
+                app,
+                ["transactions", "approve", "txn-1"],
+            )
+            assert result.exit_code != 0
+
+    def test_approve_matched_cleared_none_found(self, cli_runner, mock_settings):
+        """--matched-cleared with no qualifying transactions prints message and exits 0."""
+        list_response = {
+            "data": {
+                "transactions": [
+                    {"id": "txn-1", "approved": False, "cleared": "uncleared", "matched_transaction_id": "import-1", "amount": -5000, "date": "2024-01-15"},
+                ]
+            }
+        }
+
+        with (
+            patch("ynab_cli.cli.transactions.settings", mock_settings),
+            patch("ynab_cli.cli.transactions.YNABClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client.get_transactions = AsyncMock(return_value=list_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = cli_runner.invoke(
+                app,
+                ["transactions", "approve", "--matched-cleared"],
+            )
+
+            assert result.exit_code == 0
+            # No bulk update call when nothing to approve
+            mock_client.update_transactions_bulk.assert_not_called()

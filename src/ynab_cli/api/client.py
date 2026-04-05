@@ -333,6 +333,28 @@ class YNABClient:
             response.raise_for_status()
             return cast("dict[str, Any]", response.json())
 
+    async def update_transactions_bulk(
+        self, transactions: list[dict[str, Any]], budget_id: str | None = None
+    ) -> dict[str, Any]:
+        """
+        Bulk update transactions.
+
+        Args:
+            transactions: List of transaction dicts, each with at minimum an 'id' field
+                and the fields to update (e.g. approved, cleared, memo).
+            budget_id: Budget ID (defaults to configured budget)
+
+        Returns:
+            Bulk update response with updated transactions
+        """
+        bid = budget_id or self.budget_id
+        payload = {"transactions": transactions}
+
+        async with self.limiter:
+            response = await self.client.patch(f"/budgets/{bid}/transactions", json=payload)
+            response.raise_for_status()
+            return cast("dict[str, Any]", response.json())
+
     async def create_transaction(
         self, transaction: dict[str, Any], budget_id: str | None = None
     ) -> dict[str, Any]:
